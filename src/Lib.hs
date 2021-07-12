@@ -26,6 +26,7 @@ import Control.Monad (void)
 
 data Val = AtomVal String |
            IntVal String |
+           StringVal String |
            BoolVal Bool
            deriving (Show, Eq)
 
@@ -59,9 +60,11 @@ data Expression = VarExp String |
                   Skip
                   deriving (Show, Eq)
 
-data Statement = FactStmt String [Val] |
-                 RuleStmt String [Val] (Maybe Expression)
+data Statement = RuleStmt String [Val] (Maybe Expression)
                  deriving (Show, Eq)
+
+data Program = Program String [Statement]
+                  deriving (Show, Eq)
 
 type MParser = Parsec Void Text
 
@@ -165,7 +168,7 @@ termExp :: MParser (Either String Expression)
 termExp = do
   traceM ("Term expression")
   name <- identifier
-  argsList <- (parens (M.sepBy1 (literalExp <|> termExp) ","))
+  argsList <- (parens (M.sepBy1 (literalExp <|> termExp) (symbol ",")))
   let (args :: Either String [Expression]) = foldl (\l ->
         \r ->
           case r of
@@ -177,12 +180,12 @@ termExp = do
               case l of
                 (Right _) -> (Left err)
                 (Left lv) -> (Left (lv ++ ", " ++ err))) (Right []) argsList
-  return (fmap (\v -> (TermExp name v)) args)
+  return (fmap (\v -> (TermExp name (reverse v))) args)
 
 literalExp :: MParser (Either String Expression)
 literalExp = do
   traceM ("In literal")
-  v <- M.choice [(fmap Right integer), (fmap Right atom)]
+  v <- M.choice [(fmap Right integer), (fmap Right atom), (fmap Right stringExp)]
   traceM ("Result " ++ (show v))
   return (fmap (\vf -> (case vf of
      AtomVal d -> VarExp d
@@ -225,6 +228,8 @@ listExp = do
   symbol "]"
   return (getOrElse exp (Right (ListExp EmptyList)))
 
+stringExp :: MParser Val
+stringExp = M.between (symbol "'") (symbol "'") (StringVal <$> (M.manyTill M.printChar (M.lookAhead "'")))
 
 integer :: MParser Val
 integer = do
@@ -246,7 +251,8 @@ rule :: MParser (Either [String] Statement)
 rule = do
   name <- identifier
   traceM ("Identifier parsed " ++ (show name))
-  args <- (parens (M.sepBy atom ","))
+  args <- (parens (M.sepBy atom (symbol ",")))
+
   traceM ("Arguments parsed: " ++ (show args))
   (body :: Maybe (Either [String] Expression)) <- M.optional $ do
     void $ symbol ":-"
@@ -255,7 +261,6 @@ rule = do
       exp <- expression
       traceM ("Expression parsed: " ++ (show exp))
       return exp) (symbol "," <|> symbol ";")
-    void $ M.char '.'
     return (foldl (\l ->
       \vv ->
         case vv of
@@ -268,25 +273,24 @@ rule = do
       ) ((Right (LiteralExp (BoolVal True))) :: (Either [String] Expression)) predicates)
   return (case body of
       Just (Left errs) -> Left errs
-      Just (Right b) -> Right (RuleStmt name args (Just b))
-      Nothing -> Right (RuleStmt name args Nothing))
+      Just (Right b) -> Right (RuleStmt name (reverse args) (Just b))
+      Nothing -> Right (RuleStmt name (reverse args) Nothing))
 
-program :: MParser (Either [String] [Statement])
-program = do
-  result <- (M.many rule)
-  return (foldl (
-    \l ->
-      \r ->
-        case l of
-          (Right lv) ->
-            case r of
-              Right rv -> (Right (rv:lv))
-              Left rv -> (Left (rv))
-          (Left lv) ->
-            case r of
-              Right rv -> (Left lv)
-              Left rv -> (Left (rv ++ lv))) (Right []) result)
+program :: String -> MParser (Either [String] Program)
+program name = do
+  result <- (M.sepEndBy1 rule (symbol "."))
+  let statements = (foldl (\l -> \r ->
+          case l of
+            (Right lv) ->
+              case r of
+                Right rv -> (Right (rv:lv))
+                Left rv -> (Left (rv))
+            (Left lv) ->
+              case r of
+                Right rv -> (Left lv)
+                Left rv -> (Left (rv ++ lv))) (Right []) result)
+  return (fmap (\stmts -> (Program name (reverse stmts))) statements)
 
 someFunc :: IO ()
-someFunc = M.parseTest (program) "fact(A) :- factD(A). factD(A) :- A>20. fact(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+someFunc = M.parseTest (program "test-program") "fact(A) :- factD('A'  ,   'B',   A). fact(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
 
