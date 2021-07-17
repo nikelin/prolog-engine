@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Lib
-    ( someFunc
+    ( answerQuery, testParsing
     ) where
 import Data.Data
 import Debug.Trace
@@ -60,7 +60,7 @@ data Expression = VarExp String |
                   Skip
                   deriving (Show, Eq)
 
-data Statement = RuleStmt String [Val] (Maybe Expression)
+data Statement = RuleStmt String [Expression] (Maybe Expression)
                  deriving (Show, Eq)
 
 data Program = Program String [Statement]
@@ -78,8 +78,8 @@ whitespace = do
   return ()
 
 boolean :: MParser Val
-boolean = M.try ( M.string "true"  >> return (BoolVal True)  )
-           <|> M.try ( M.string "false" >> return (BoolVal False) )
+boolean = M.try ( M.string "True"  >> return (BoolVal True)  )
+           <|> M.try ( M.string "False" >> return (BoolVal False) )
 
 sc :: MParser ()
 sc = L.space
@@ -98,10 +98,8 @@ identifier = M.between (M.optional M.space) (M.optional M.space) parser
   where
     parser = do
        fst <- firstChar
-       traceM ("First character parsed: " ++ (show fst))
        rest <- M.many nonFirstChar
        let result = fst:rest
-       traceM ("Identifier parsed: " ++ (show result))
        return result
       where
        firstChar = M.char '_' <|> M.letterChar
@@ -128,12 +126,9 @@ binaryOperator = unaryOperator <|>
 
 binaryOperation :: MParser (Either String Expression)
 binaryOperation = do
-  traceM ("in binary function (left) ")
   left <- literalExp
   op <- (fmap Right binaryOperator)
-  traceM ("in binary function (operator) " ++ (show op))
   right <- literalExp
-  traceM ("in binary function (right) " ++ (show left) ++ " " ++ (show op) ++ " " ++ (show right))
   return (do
     l <- left
     r <- right
@@ -155,10 +150,8 @@ binaryOperation = do
 
 unaryOperation :: MParser (Either String Expression)
 unaryOperation = do
-  traceM ("Unary operation")
   op <- unaryOperator
   exp <- expression
-  traceM ("Operator " ++ (show op) ++ " and right " ++ (show exp))
   return (exp >>= (\right -> (case op of
     OpMin -> Right (ArithNegOp right)
     OpNot -> Right (LogicalNotOp right)
@@ -166,7 +159,6 @@ unaryOperation = do
 
 termExp :: MParser (Either String Expression)
 termExp = do
-  traceM ("Term expression")
   name <- identifier
   argsList <- (parens (M.sepBy1 (literalExp <|> termExp) (symbol ",")))
   let (args :: Either String [Expression]) = foldl (\l ->
@@ -184,23 +176,19 @@ termExp = do
 
 literalExp :: MParser (Either String Expression)
 literalExp = do
-  traceM ("In literal")
   v <- M.choice [(fmap Right integer), (fmap Right atom), (fmap Right stringExp)]
-  traceM ("Result " ++ (show v))
   return (fmap (\vf -> (case vf of
      AtomVal d -> VarExp d
      d @ otherwise -> LiteralExp d)) v)
 
 expression :: MParser (Either String Expression)
 expression = do
-    traceM ("In expression")
     op <- M.try listExp <|> M.try unaryOperation <|> M.try binaryOperation <|> M.try termExp <|> M.try literalExp
     return op
 
 consList :: MParser (Either String Expression)
 consList = do
   head <- expression
-  traceM ("Head of the list " ++ (show head))
   _ <- symbol "|"
   tail <- expression
   return (tail >>= (\t -> (fmap (\h -> (ListExp (ConsList h t))) head)))
@@ -247,36 +235,48 @@ atom = M.between (M.optional M.space) (M.optional M.space) parser
        firstChar = M.char '_' <|> M.upperChar
        nonFirstChar = M.alphaNumChar
 
-rule :: MParser (Either [String] Statement)
+rule :: MParser (Either String Statement)
 rule = do
   name <- identifier
-  traceM ("Identifier parsed " ++ (show name))
-  args <- (parens (M.sepBy atom (symbol ",")))
-
-  traceM ("Arguments parsed: " ++ (show args))
-  (body :: Maybe (Either [String] Expression)) <- M.optional $ do
+  args <- (parens (M.sepBy expression (symbol ",")))
+  let argsv = (foldl (\l ->
+        \r ->
+          case l of
+              Right lv ->
+                case r of
+                  Right rv -> Right (rv:lv)
+                  Left rv -> Left rv
+              Left lv ->
+                case r of
+                  Right _ -> Left lv
+                  Left rv -> Left (rv ++ lv)) (Right []) args)
+  (body :: Maybe (Either String Expression)) <- M.optional $ do
     void $ symbol ":-"
-    traceM ("Parsed smiley")
     predicates <- M.sepBy (do
       exp <- expression
-      traceM ("Expression parsed: " ++ (show exp))
       return exp) (symbol "," <|> symbol ";")
     return (foldl (\l ->
       \vv ->
         case vv of
-          (Right v) -> case l of
-            Left lv -> Left lv
-            Right lv -> (Right (LogicalAndOp lv v))
-          (Left v) -> case l of
-            Left lv -> Left (v:lv)
-            Right _ -> Left (v:[])
-      ) ((Right (LiteralExp (BoolVal True))) :: (Either [String] Expression)) predicates)
-  return (case body of
-      Just (Left errs) -> Left errs
-      Just (Right b) -> Right (RuleStmt name (reverse args) (Just b))
-      Nothing -> Right (RuleStmt name (reverse args) Nothing))
+          (Right v) ->
+            case l of
+              Left lv -> Left lv
+              Right lv -> (Right (LogicalAndOp lv v))
+          (Left v) ->
+            case l of
+              Left lv -> Left (lv ++ v)
+              Right _ -> Left v
+      ) ((Right (LiteralExp (BoolVal True))) :: (Either String Expression)) predicates)
+  return (case argsv of
+    Right argsvv ->
+      (case body of
+            Just (Left errs) -> Left errs
+            Just (Right b) -> Right (RuleStmt name (reverse argsvv) (Just b))
+            Nothing -> Right (RuleStmt name (reverse argsvv) Nothing))
+    Left errs -> Left errs)
 
-program :: String -> MParser (Either [String] Program)
+
+program :: String -> MParser (Either String Program)
 program name = do
   result <- (M.sepEndBy1 rule (symbol "."))
   let statements = (foldl (\l -> \r ->
@@ -291,6 +291,21 @@ program name = do
                 Left rv -> (Left (rv ++ lv))) (Right []) result)
   return (fmap (\stmts -> (Program name (reverse stmts))) statements)
 
-someFunc :: IO ()
-someFunc = M.parseTest (program "test-program") "fact(A) :- factD('A'  ,   'B',   A). fact(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+solve :: [Statement] -> Expression -> Either [String] Expression
+solve (x:xs) expr = Right expr
+
+testParsing :: IO ()
+testParsing = M.parseTest (program "test-program") "fact(A) :- factD('A'  ,   'B',   A). fact(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+
+answerQuery :: IO ()
+answerQuery = putStrLn (show $ do
+  program <- M.runParser (program "test-program") "" "fact(A) :- factD('A'  ,   'B',   A). fact(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+  expression <- M.runParser (expression) "" "fact(A)"
+  let result = (do
+      (Program _ stmts) <- program
+      expr <- expression
+      return (solve stmts expr))
+  return result)
+
+
 
