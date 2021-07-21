@@ -6,10 +6,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Lib
-    ( answerQuery, testParsing
+    ( answerQuery, answerQuery1, testParsing
     ) where
 
-import qualified Data.HashMap.Strict as H (HashMap, insert, lookup, empty, fromList, union)
+import qualified Data.HashMap.Strict as H (HashMap, insert, lookup, empty, fromList, toList, union)
 
 import Data.Data
 import Debug.Trace
@@ -28,7 +28,8 @@ import qualified Data.Set              as S
 import Control.Monad (void)
 
 data Val = AtomVal String |
-           IntVal String |
+           IntVal Int |
+           FloatVal Float |
            StringVal String |
            BoolVal Bool
            deriving (Show, Eq)
@@ -43,24 +44,20 @@ data List = ConsList Expression Expression |
             EmptyList
             deriving (Show, Eq)
 
+data Exception = UnknownVariableException String
+            | UnexpectedExpression Expression
+            | WrongUnaryOperationContext Operator Expression
+            | WrongBinaryOperationContext Operator Expression Expression
+            | UnsupportedListTypeException Operator Expression Expression
+          deriving (Show, Eq)
+
 data Expression = VarExp String |
                   TermExp String [Expression] |
                   LiteralExp Val |
+                  ClosureExpr String [Expression] Expression |
                   ListExp List |
-                  LogicalNotOp Expression |
-                  ArithNegOp Expression |
-                  ArithAddOp Expression Expression |
-                  ArithMultOp Expression Expression |
-                  ArithDivOp Expression Expression |
-                  LogicalAndOp Expression Expression |
-                  LogicalOrOp Expression Expression |
-                  EqOp Expression Expression |
-                  NotEqOp Expression Expression |
-                  CompLtOp Expression Expression |
-                  CompGtOp Expression Expression |
-                  CompLteOp Expression Expression |
-                  CompGteOp Expression Expression |
-                  Skip
+                  UnaryExpression Operator Expression |
+                  BinaryExpression Operator Expression Expression
                   deriving (Show, Eq)
 
 data Statement = RuleStmt String [Expression] (Maybe Expression)
@@ -70,6 +67,9 @@ data Program = Program String [Statement]
                   deriving (Show, Eq)
 
 type MParser = Parsec Void Text
+
+type Subst = (String, Expression)
+type Env = H.HashMap String Expression
 
 getOrElse::Maybe a -> a -> a
 getOrElse (Just v) d = v
@@ -138,34 +138,17 @@ binaryOperation = do
     l <- left
     r <- right
     o <- op
-    v <- (case o of
-          OpCompLt -> Right (CompLtOp l r)
-          OpCompLte -> Right (CompLteOp l r)
-          OpCompGte -> Right (CompGteOp l r)
-          OpCompGt -> Right (CompGtOp l r)
-          OpAdd -> Right (ArithAddOp l r)
-          OpMult -> Right (ArithMultOp l r)
-          OpDiv -> Right (ArithDivOp l r)
-          OpAnd -> Right (LogicalAndOp l r)
-          OpOr -> Right (LogicalOrOp l r)
-          OpEq -> Right (EqOp l r)
-          OpNotEq -> Right (NotEqOp l r)
-          otherwise -> Left ("operator cannot be in a binary position: " ++ (show op)))
-    return v)
+    return (BinaryExpression o l r))
 
 unaryOperation :: MParser (Either String Expression)
 unaryOperation = do
   op <- unaryOperator
   exp <- (expression1 True)
-  return (exp >>= (\right -> (case op of
-    OpMin -> Right (ArithNegOp right)
-    OpNot -> Right (LogicalNotOp right)
-    otherwise -> (Left ("operator cannot be in an unary position: " ++ show(op))))))
+  return (fmap (\v -> UnaryExpression op v) exp)
 
 termExp :: MParser (Either String Expression)
 termExp = do
   name <- (identifier False)
-  traceM ("TermExp " ++ (show name))
   argsList <- (parens (M.sepBy1 expression (symbol ",")))
   let (args :: Either String [Expression]) = foldl (\l ->
         \r ->
@@ -182,7 +165,7 @@ termExp = do
 
 literalExp :: MParser (Either String Expression)
 literalExp = do
-  v <- M.choice [(fmap Right integer), (fmap Right stringExp), (fmap Right atom)]
+  v <- M.choice [(fmap Right integer), (fmap Right float), (fmap Right stringExp), (fmap Right atom)]
   return (fmap (\vf -> LiteralExp vf) v)
 
 expression :: MParser (Either String Expression)
@@ -192,11 +175,9 @@ expression1 :: Bool -> MParser (Either String Expression)
 expression1 isSubExpression
   | isSubExpression == False = do
       op <- listExp <|> M.try unaryOperation  <|> M.try termExp <|> M.try binaryOperation <|> variableExp <|> literalExp
-      traceM ("Result: " ++ (show op))
       return op
   | otherwise = do
       op <- M.try listExp <|> M.try (parens unaryOperation)  <|> M.try termExp <|> M.try (parens binaryOperation) <|> variableExp <|> literalExp
-      traceM ("Result (sub-expression): " ++ (show op))
       return op
 
 consList :: MParser (Either String Expression)
@@ -232,10 +213,17 @@ listExp = do
 stringExp :: MParser Val
 stringExp = M.between (symbol "'") (symbol "'") (StringVal <$> (M.manyTill M.printChar (M.lookAhead "'")))
 
+float :: MParser Val
+float = do
+  m <- M.some M.digitChar
+  symbol "."
+  e <- M.some M.digitChar
+  return (FloatVal (read (m ++ "." ++ e) :: Float))
+
 integer :: MParser Val
 integer = do
   v <- M.some M.digitChar
-  return (IntVal v)
+  return (IntVal (read v :: Int))
 
 atom :: MParser Val
 atom = M.between (M.optional M.space) (M.optional M.space) parser
@@ -279,7 +267,7 @@ rule = do
           (Right v) ->
             case l of
               Left lv -> Left lv
-              Right lv -> (Right (LogicalAndOp lv v))
+              Right lv -> (Right (BinaryExpression OpAnd lv v))
           (Left v) ->
             case l of
               Left lv -> Left (lv ++ v)
@@ -317,39 +305,246 @@ listVariables (ListExp (EnumeratedList xs)) = foldl (++) [] (fmap (\v -> listVar
 listVariables (ListExp (ConsList head tail)) = (listVariables head) ++ (listVariables tail)
 listVariables (TermExp _ args) = foldl (++) [] (fmap (\v -> listVariables v) args)
 
-unify' :: Expression -> Expression -> Bool
-unify' (VarExp _) (VarExp _) = False
-unify' (VarExp _) (LiteralExp _) = True
-unify' (LiteralExp _) (VarExp _) = True
-unify' (LiteralExp left) (LiteralExp right) = left == right
-unify' (TermExp tname1 args1) (TermExp tname2 args2)
-  | tname1 /= tname2 = False
-  | (length args1) /= (length args2) = False
+unify' :: Env -> [Subst] -> Expression -> Expression -> (Bool, [Subst])
+unify' _ _ _ (ClosureExpr _ _ _) = (False, [])
+unify' env subst (VarExp n1) (VarExp n2) =
+  case (H.lookup n1 env) of
+    Just n1v ->
+      case (H.lookup n2 env) of
+          Just n2v ->
+            (n1v == n2v, [])
+          Nothing ->
+            (False, [])
+    Nothing -> (False, [])
+unify' env subst (VarExp n) l @ (LiteralExp _) =
+  case H.lookup n env of
+     Just nv -> (nv == l, [])
+     Nothing -> (False, [])
+
+unify' env subst t @ (TermExp _ _) (VarExp n) = (True, (n, t):subst)
+unify' env subst v @ (LiteralExp _) (VarExp n) = (True, (n, v):subst)
+unify' env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
+unify' env subst (ClosureExpr cn closure_args body) term @ (TermExp tn args)
+  | cn == tn =
+    case (trace "Unifying closure and term" (unify' env subst term (TermExp cn closure_args))) of
+      (True, new_subst) ->
+        let
+          updated_env = (H.union (H.fromList new_subst) env)
+        in
+          trace ("Substitution in lambda " ++ (show new_subst)) (unify updated_env subst body)
+      (False, _) -> (False, [])
+  | otherwise = (False, [])
+unify' env subst (TermExp tname1 args1) (TermExp tname2 args2)
+  | tname1 /= tname2 = (trace ("Name mismatch" ++ (show tname1) ++ (show tname2)))((False, []))
+  | (length args1) /= (length args2) = (False, [])
   | otherwise =
-    (and (fmap (\arg -> (unify' (fst arg) (snd arg))) (zip args1 args2)))
+    (foldl (\l ->
+        (\r ->
+          if (fst l) && (fst r) then
+            (True, (snd l) ++ (snd r))
+          else
+            (False, []))
+        ) (True, []) (fmap (\arg -> (unify' env subst (fst arg) (snd arg))) (zip args1 args2)))
+unify' a b c d = trace ("Unexpected input" ++ (show a) ++ " " ++ (show b) ++ " " ++ (show c) ++ " " ++ (show d)) (False, [])
 
-unify :: [Statement] -> Expression -> Either [String] Bool
-unify [] expr = Right False  -- throw exception here
-unify stms expr = Right (aux stms expr)
-  where
-    aux [] expr = True -- check
-    aux ((RuleStmt name args _):xs) expr =
-      (unify' (TermExp name args) expr) && (aux xs expr)
+unify :: Env -> [Subst] -> Expression -> (Bool, [Subst])
+unify env subst expr @ (TermExp name _) =
+  case (H.lookup name env) of
+    Just v ->
+      (unify' env subst v expr)
+    Nothing ->
+      (False, [])
+unify env _ expr =
+  case (eval env expr) of
+    Right v -> (True, [])
+    Left e -> (False, [])
 
-solve :: [Statement] -> Expression -> Either [String] Bool
-solve statements expr = do
-  let variables = listVariables expr
-  traceM ("Variables extracted: " ++ (show variables))
-  result <- unify statements expr
-  return result
+solve :: [Statement] -> Expression -> Either [String] [Subst]
+solve statements expr = (case result of
+  (False, _) -> (Left ["unification faled"])
+  (True, substList) -> Right substList)
+    where
+      closures = (map (\v -> case v of
+         (RuleStmt n args (Just body)) -> (n, (ClosureExpr n args body))
+         (RuleStmt n args Nothing) -> (n, (TermExp  n args))) statements)
+      env = (H.fromList closures)
+      result = (unify env [] expr)
+
+
+evalStmt :: Env -> Statement -> Either Exception Expression
+evalStmt env (RuleStmt n args (Just body)) = Right (ClosureExpr n args body)
+evalStmt env (RuleStmt n args Nothing) = Right (TermExp n args)
+
+eval :: Env -> Expression -> Either Exception Expression
+eval _ v @ (LiteralExp _) = Right v
+eval env (VarExp n) = case (H.lookup n env) of
+  Just res -> (eval env res)
+  Nothing -> Left (UnknownVariableException n)
+
+eval env (UnaryExpression op operand) =
+  (eval env operand) >>= (\v ->
+    case v of
+      l @ (LiteralExp (IntVal v)) ->
+        case op of
+          OpMin -> Right (LiteralExp (IntVal (-1 * v)))
+          OpAdd -> Right (LiteralExp (IntVal (if v > 0 then v else -1 * v)))
+          _ -> (Left (WrongUnaryOperationContext op l))
+      l @ (LiteralExp (BoolVal v)) ->
+        case op of
+          OpNot -> Right (LiteralExp (BoolVal (not v)))
+          _ -> (Left (WrongUnaryOperationContext op l))
+      _ ->
+        (Left (WrongUnaryOperationContext op operand))
+  )
+
+eval env (BinaryExpression op left right) =
+  (eval env left) >>= (\l ->
+    (eval env right) >>= (\r ->
+      case (l, r) of
+        (le @ (LiteralExp (IntVal lv)), ze @ (LiteralExp (IntVal rv))) ->
+          case op of
+            OpAdd ->
+              (Right (LiteralExp (IntVal (lv + rv))))
+            OpMin ->
+              (Right (LiteralExp (IntVal (lv - rv))))
+            OpMult ->
+              (Right (LiteralExp (IntVal (lv * rv))))
+            OpDiv ->
+              (Right (LiteralExp (IntVal (lv `div` rv))))
+            OpCompLt ->
+              (Right (LiteralExp (BoolVal (lv < rv))))
+            OpCompGt ->
+              (Right (LiteralExp (BoolVal (lv > rv))))
+            OpCompGte ->
+              (Right (LiteralExp (BoolVal (lv >= rv))))
+            OpCompLte ->
+              (Right (LiteralExp (BoolVal (lv <= rv))))
+            OpEq ->
+              (Right (LiteralExp (BoolVal (lv == rv))))
+            OpNotEq ->
+              (Right (LiteralExp (BoolVal (lv /= rv))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze))
+        (le @ (LiteralExp (StringVal lv)), ze @ (LiteralExp (StringVal rv))) ->
+          case op of
+            OpAdd ->
+              (Right (LiteralExp (StringVal (lv ++ rv))))
+            OpNot ->
+              (Right (LiteralExp (BoolVal (lv /= rv))))
+            OpEq ->
+              (Right (LiteralExp (BoolVal (lv == rv))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze))
+        (le @ (LiteralExp (BoolVal lv)), ze @ (LiteralExp (BoolVal rv))) ->
+          case op of
+            OpAnd ->
+              (Right (LiteralExp (BoolVal (lv && rv))))
+            OpOr ->
+              (Right (LiteralExp (BoolVal (lv || rv))))
+            OpEq ->
+              (Right (LiteralExp (BoolVal (lv == rv))))
+            OpNotEq ->
+              (Right (LiteralExp (BoolVal (lv /= rv))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze))
+        (le @ (ListExp lv), ze @ (ListExp zv)) ->
+          let
+            result = case (lv,zv) of
+              ((EnumeratedList elems1), (EnumeratedList elems2)) -> Right (elems1, elems2)
+              ((EnumeratedList elems), EmptyList) -> Right (elems, [])
+              (EmptyList, (EnumeratedList elems)) -> Right ([], elems)
+              (EmptyList, EmptyList) -> Right ([], [])
+              _ -> Left (UnsupportedListTypeException op le ze)
+          in (case (result, op) of
+            ((Left e), _) -> (Left e)
+            (Right (left, right), OpAdd) ->
+              (Right (ListExp (EnumeratedList (left ++ right))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze)))
+        (le @ (ListExp lv), ze @ (LiteralExp zv)) ->
+          (case (result, op) of
+            (Right lst, OpAdd)  ->
+              (Right (ListExp (EnumeratedList ((LiteralExp zv):lst))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze)))
+          where
+            result = (case lv of
+              (EnumeratedList elems1) -> (Right elems1)
+              EmptyList -> (Right [])
+              _ -> (Left (UnsupportedListTypeException op le ze)))
+        (le @ (LiteralExp lv), ze @ (LiteralExp zv)) ->
+          case op of
+            OpEq -> (Right (LiteralExp (BoolVal (lv == zv))))
+            OpNotEq -> (Right (LiteralExp (BoolVal (lv /= zv))))
+        _ ->
+          trace ("Wrong binary operation: " ++ (show (WrongBinaryOperationContext op l r)))(Left (WrongBinaryOperationContext op l r))
+    )
+  )
+
+eval env (TermExp n args) =
+    let
+      argsv = (foldl (\l ->
+        (\r ->
+          case l of
+            Right lv ->
+              case r of
+                Right rv ->
+                  Right (rv:lv)
+                Left rv ->
+                  Left rv
+            Left lv -> Left lv)) (Right []) (fmap (\v -> (eval env v)) args))
+    in
+      (case argsv of
+        Right v -> Right (TermExp n v)
+        Left e -> Left e)
+
+eval env (ListExp EmptyList) = Right (ListExp EmptyList)
+
+eval env (ListExp (EnumeratedList xs)) =
+  let
+    args = (fmap (\v -> (eval env v)) xs)
+    result = (foldl (\l ->
+        (\r ->
+          case l of
+            Right lv ->
+              case r of
+                Right rv -> Right (rv:lv)
+                Left rv -> Left rv
+            Left lv -> Left lv
+        )) (Right []) args)
+  in
+    (case result of
+      Right elems -> Right (ListExp (EnumeratedList elems))
+      Left e -> Left e)
+
+
+eval env (ListExp (ConsList head tail)) = do
+  headv <- (eval env head)
+  tailv <- (eval env tail)
+  return (ListExp (ConsList headv tailv))
+
+eval env unexpected =
+  trace ("Unexpected input to the eval(x, y): " ++ (show unexpected)) (Left (UnexpectedExpression unexpected))
 
 testParsing :: IO ()
 testParsing = M.parseTest (program "test-program") "fact(A) :- factD('A'  ,   'B',   A). fact(A):-W+(W+Z),[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
 
+answerQuery1 :: IO ()
+answerQuery1 = do
+  query <- getLine
+  putStrLn (show $ do
+    program <- M.runParser (program "test-program") "" "fact(a). man(b, fact(a, b)). fact(a, b). fact(b). factC(A) :- factD('A'  ,   'B',   A). factD(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+    expression <- (M.runParser (expression) "" (pack query))
+    let result = (do
+        (Program _ stmts) <- program
+        expr <- expression
+        return (solve stmts expr))
+    return result)
+
 answerQuery :: IO ()
 answerQuery = putStrLn (show $ do
-  program <- M.runParser (program "test-program") "" "fact(a). fact(b). factC(A) :- factD('A'  ,   'B',   A). factD(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
-  expression <- M.runParser (expression) "" "fact(A)"
+  program <- M.runParser (program "test-program") "" "fact(a). man(b, fact(a, b)). fact(a, b). fact(b). factC(A) :- factD('A'  ,   'B',   A). factD(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+  expression <- M.runParser (expression) "" "man(A, fact(a, X))"
   let result = (do
       (Program _ stmts) <- program
       expr <- expression
