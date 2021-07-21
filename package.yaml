@@ -22,6 +22,7 @@ description:         Please see the README on GitHub at <https://github.com/nike
 dependencies:
 - base >= 4.7 && < 5
 - containers >= 0.6 && < 0.7
+- unordered-containers >= 0.2
 - megaparsec
 - text
 

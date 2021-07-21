@@ -35,6 +35,7 @@ library
     , containers ==0.6.*
     , megaparsec
     , text
+    , unordered-containers >=0.2
   default-language: Haskell2010
 
 executable prolog-engine-exe
@@ -50,6 +51,7 @@ executable prolog-engine-exe
     , megaparsec
     , prolog-engine
     , text
+    , unordered-containers >=0.2
   default-language: Haskell2010
 
 test-suite prolog-engine-test
@@ -66,4 +68,5 @@ test-suite prolog-engine-test
     , megaparsec
     , prolog-engine
     , text
+    , unordered-containers >=0.2
   default-language: Haskell2010
