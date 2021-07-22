@@ -319,14 +319,14 @@ listVariables (TermExp _ args) = foldl (++) [] (fmap (\v -> listVariables v) arg
 unify' :: TermEnv -> [Subst] -> Expression -> Expression -> (Bool, [Subst])
 unify' _ _ _ (ClosureExpr _ _ _) = (False, [])
 unify' env subst (VarExp n1) (VarExp n2) = (False, []) -- cannot unify outside of a closure context
-unify' env subst (VarExp n) l @ (LiteralExp _) = (False, []) -- cannot unify outside of a closure context
+unify' env subst (VarExp n) l @ (LiteralExp _) = (True, (n, l):[]) -- cannot unify outside of a closure context
 unify' env subst exp @ (BinaryExpression _ _ _) term @ (TermExp n args) =
   case (eval env H.empty exp) of
     Right v ->
       unify' env subst v term
     Left e -> (False, [])
-unify' env subst t @ (TermExp _ _) (VarExp n) = (True, (n, t):subst)
-unify' env subst v @ (LiteralExp _) (VarExp n) = (True, (n, v):subst)
+unify' env subst t @ (TermExp _ _) (VarExp n) = (True, (n, t):[])
+unify' env subst v @ (LiteralExp _) (VarExp n) = (True, (n, v):[])
 unify' env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
 unify' env subst (ClosureExpr cn closure_args body) term @ (TermExp tn args)
   | cn == tn =
@@ -368,7 +368,7 @@ unify env subst expr @ (TermExp name args) =
                   (False, lsubst)
             (False, lsubst) -> (False, lsubst)
         )) (True, []) (fmap (\term ->
-          trace ("Unification for term " ++ (show name) ++ " " ++ (show expr) ++ " === " ++ (show v)) (unify' env subst term expr)) v))
+          trace ("Unification for term " ++ (show name) ++ " " ++ (show expr) ++ " === " ++ (show term)) (unify' env subst term expr)) v))
     Nothing ->
       trace ("Term was not found:" ++ (show name)) (False, []))
 
