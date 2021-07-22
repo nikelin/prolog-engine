@@ -6,10 +6,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Lib
-    ( answerQuery, answerQuery1, testParsing
+    ( answerQuery, answerQuery1, answerQuery3, testParsing
     ) where
 
-import qualified Data.HashMap.Strict as H (HashMap, insert, lookup, empty, fromList, toList, union)
+import qualified Data.HashMap.Strict as H (HashMap, insert, fromListWith, lookup, empty, fromList, toList, union, unionWith)
 
 import Data.Data
 import Debug.Trace
@@ -54,6 +54,7 @@ data Exception = UnknownVariableException String
 data Expression = VarExp String |
                   TermExp String [Expression] |
                   LiteralExp Val |
+                  CutExp |
                   ClosureExpr String [Expression] Expression |
                   ListExp List |
                   UnaryExpression Operator Expression |
@@ -69,7 +70,12 @@ data Program = Program String [Statement]
 type MParser = Parsec Void Text
 
 type Subst = (String, Expression)
-type Env = H.HashMap String Expression
+type TermId = String
+type TermEnv = H.HashMap TermId [Expression]
+type EvalEnv = H.HashMap String Expression
+
+termId :: String -> Int -> TermId
+termId name argc = name ++ "/" ++ (show argc)
 
 getOrElse::Maybe a -> a -> a
 getOrElse (Just v) d = v
@@ -86,9 +92,9 @@ boolean = M.try ( M.string "True"  >> return (BoolVal True)  )
 
 sc :: MParser ()
 sc = L.space
-  M.space1                         -- (2)
-  (L.skipLineComment "//")       -- (3)
-  (L.skipBlockComment "/*" "*/") -- (4)
+  M.space1
+  (L.skipLineComment "//")
+  (L.skipBlockComment "/*" "*/")
 
 symbol :: Text -> MParser Text
 symbol = L.symbol sc
@@ -174,11 +180,16 @@ expression = expression1 False
 expression1 :: Bool -> MParser (Either String Expression)
 expression1 isSubExpression
   | isSubExpression == False = do
-      op <- listExp <|> M.try unaryOperation  <|> M.try termExp <|> M.try binaryOperation <|> variableExp <|> literalExp
+      op <- listExp <|> cutExp <|> M.try unaryOperation  <|> M.try termExp <|> M.try binaryOperation <|> variableExp <|> literalExp
       return op
   | otherwise = do
-      op <- M.try listExp <|> M.try (parens unaryOperation)  <|> M.try termExp <|> M.try (parens binaryOperation) <|> variableExp <|> literalExp
+      op <- M.try listExp <|> cutExp <|> M.try (parens unaryOperation)  <|> M.try termExp <|> M.try (parens binaryOperation) <|> variableExp <|> literalExp
       return op
+
+cutExp :: MParser (Either String Expression)
+cutExp = do
+  symbol "!"
+  return (Right CutExp)
 
 consList :: MParser (Either String Expression)
 consList = do
@@ -305,33 +316,28 @@ listVariables (ListExp (EnumeratedList xs)) = foldl (++) [] (fmap (\v -> listVar
 listVariables (ListExp (ConsList head tail)) = (listVariables head) ++ (listVariables tail)
 listVariables (TermExp _ args) = foldl (++) [] (fmap (\v -> listVariables v) args)
 
-unify' :: Env -> [Subst] -> Expression -> Expression -> (Bool, [Subst])
+unify' :: TermEnv -> [Subst] -> Expression -> Expression -> (Bool, [Subst])
 unify' _ _ _ (ClosureExpr _ _ _) = (False, [])
-unify' env subst (VarExp n1) (VarExp n2) =
-  case (H.lookup n1 env) of
-    Just n1v ->
-      case (H.lookup n2 env) of
-          Just n2v ->
-            (n1v == n2v, [])
-          Nothing ->
-            (False, [])
-    Nothing -> (False, [])
-unify' env subst (VarExp n) l @ (LiteralExp _) =
-  case H.lookup n env of
-     Just nv -> (nv == l, [])
-     Nothing -> (False, [])
-
+unify' env subst (VarExp n1) (VarExp n2) = (False, []) -- cannot unify outside of a closure context
+unify' env subst (VarExp n) l @ (LiteralExp _) = (False, []) -- cannot unify outside of a closure context
+unify' env subst exp @ (BinaryExpression _ _ _) term @ (TermExp n args) =
+  case (eval env H.empty exp) of
+    Right v ->
+      unify' env subst v term
+    Left e -> (False, [])
 unify' env subst t @ (TermExp _ _) (VarExp n) = (True, (n, t):subst)
 unify' env subst v @ (LiteralExp _) (VarExp n) = (True, (n, v):subst)
 unify' env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
 unify' env subst (ClosureExpr cn closure_args body) term @ (TermExp tn args)
   | cn == tn =
-    case (trace "Unifying closure and term" (unify' env subst term (TermExp cn closure_args))) of
+    case (trace ("Unifying closure and term: " ++ (show body) ++ " " ++ (show term)) (unify' env subst term (TermExp cn closure_args))) of
       (True, new_subst) ->
         let
-          updated_env = (H.union (H.fromList new_subst) env)
+          updated_env = (H.fromList new_subst)
         in
-          trace ("Substitution in lambda " ++ (show new_subst)) (unify updated_env subst body)
+          trace ("Substitution in lambda " ++ (show new_subst)) (case (eval env updated_env body) of
+            Right v -> trace ("Evaluation result of" ++ (show body) ++ " is: " ++ (show v)) (True, subst)
+            Left e -> (False, []))
       (False, _) -> (False, [])
   | otherwise = (False, [])
 unify' env subst (TermExp tname1 args1) (TermExp tname2 args2)
@@ -347,42 +353,54 @@ unify' env subst (TermExp tname1 args1) (TermExp tname2 args2)
         ) (True, []) (fmap (\arg -> (unify' env subst (fst arg) (snd arg))) (zip args1 args2)))
 unify' a b c d = trace ("Unexpected input" ++ (show a) ++ " " ++ (show b) ++ " " ++ (show c) ++ " " ++ (show d)) (False, [])
 
-unify :: Env -> [Subst] -> Expression -> (Bool, [Subst])
-unify env subst expr @ (TermExp name _) =
-  case (H.lookup name env) of
+unify :: TermEnv -> [Subst] -> Expression -> (Bool, [Subst])
+unify env subst expr @ (TermExp name args) =
+  (case (H.lookup (termId name (length args)) env) of
     Just v ->
-      (unify' env subst v expr)
+      (foldl (\l ->
+        (\r ->
+          case l of
+            (True, lsubst) ->
+              case r of
+                (True, rsubst) ->
+                  (True, lsubst ++ rsubst)
+                (False, _) ->
+                  (False, lsubst)
+            (False, lsubst) -> (False, lsubst)
+        )) (True, []) (fmap (\term ->
+          trace ("Unification for term " ++ (show name) ++ " " ++ (show expr) ++ " === " ++ (show v)) (unify' env subst term expr)) v))
     Nothing ->
-      (False, [])
+      trace ("Term was not found:" ++ (show name)) (False, []))
+
 unify env _ expr =
-  case (eval env expr) of
+  trace ("Unification for expression: " ++ (show expr)) (case (eval env H.empty expr) of
     Right v -> (True, [])
-    Left e -> (False, [])
+    Left e -> (False, []))
 
 solve :: [Statement] -> Expression -> Either [String] [Subst]
 solve statements expr = (case result of
-  (False, _) -> (Left ["unification faled"])
+  (False, _) -> (Left ["unification failed"])
   (True, substList) -> Right substList)
     where
       closures = (map (\v -> case v of
-         (RuleStmt n args (Just body)) -> (n, (ClosureExpr n args body))
-         (RuleStmt n args Nothing) -> (n, (TermExp  n args))) statements)
-      env = (H.fromList closures)
-      result = (unify env [] expr)
+         (RuleStmt n args (Just body)) -> ((termId n (length args)), [(ClosureExpr n args body)])
+         (RuleStmt n args Nothing) -> ((termId n (length args)), [(TermExp n args)])) statements)
+      termEnv = (H.fromListWith (++) closures)
+      result = (unify termEnv [] expr)
 
 
-evalStmt :: Env -> Statement -> Either Exception Expression
-evalStmt env (RuleStmt n args (Just body)) = Right (ClosureExpr n args body)
-evalStmt env (RuleStmt n args Nothing) = Right (TermExp n args)
+evalStmt :: TermEnv -> EvalEnv -> Statement -> Either Exception Expression
+evalStmt termEnv env (RuleStmt n args (Just body)) = Right (ClosureExpr n args body)
+evalStmt termEnv env (RuleStmt n args Nothing) = Right (TermExp n args)
 
-eval :: Env -> Expression -> Either Exception Expression
-eval _ v @ (LiteralExp _) = Right v
-eval env (VarExp n) = case (H.lookup n env) of
-  Just res -> (eval env res)
+eval :: TermEnv -> EvalEnv -> Expression -> Either Exception Expression
+eval _ _ v @ (LiteralExp _) = Right v
+eval termEnv env (VarExp n) = case (H.lookup n env) of
+  Just res -> (eval termEnv env res)
   Nothing -> Left (UnknownVariableException n)
 
-eval env (UnaryExpression op operand) =
-  (eval env operand) >>= (\v ->
+eval termEnv env (UnaryExpression op operand) =
+  (eval termEnv env operand) >>= (\v ->
     case v of
       l @ (LiteralExp (IntVal v)) ->
         case op of
@@ -397,10 +415,41 @@ eval env (UnaryExpression op operand) =
         (Left (WrongUnaryOperationContext op operand))
   )
 
-eval env (BinaryExpression op left right) =
-  (eval env left) >>= (\l ->
-    (eval env right) >>= (\r ->
+eval termEnv env (BinaryExpression op left right) =
+  (eval termEnv env left) >>= (\l ->
+    (eval termEnv env right) >>= (\r ->
       case (l, r) of
+        (le @ (TermExp _ _), ze @ (TermExp _ _)) ->
+          let
+            (l1, _) = unify termEnv [] le
+            (l2, _) = unify termEnv [] ze
+          in (case op of
+            OpAnd ->
+              (Right (LiteralExp (BoolVal (l1 && l2))))
+            OpEq ->
+              (Right (LiteralExp (BoolVal (l1 == l2))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze)))
+        (le @ (LiteralExp (BoolVal l)), ze @ (TermExp _ _)) ->
+          let
+            (r1, _) = trace ("Invoking unification for " ++ (show ze)) (unify termEnv [] ze)
+          in (case op of
+            OpEq ->
+              (Right (LiteralExp (BoolVal (r1 == l))))
+            OpAnd ->
+              (Right (LiteralExp (BoolVal (r1 && l))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze)))
+        (le @ (TermExp _ _), ze @ (LiteralExp (BoolVal l))) ->
+          let
+            (l1, _) = unify termEnv [] le
+          in (case op of
+            OpEq ->
+              (Right (LiteralExp (BoolVal (l1 == l))))
+            OpAnd ->
+              (Right (LiteralExp (BoolVal (l1 && l))))
+            _ ->
+              (Left (WrongBinaryOperationContext op le ze)))
         (le @ (LiteralExp (IntVal lv)), ze @ (LiteralExp (IntVal rv))) ->
           case op of
             OpAdd ->
@@ -476,12 +525,13 @@ eval env (BinaryExpression op left right) =
           case op of
             OpEq -> (Right (LiteralExp (BoolVal (lv == zv))))
             OpNotEq -> (Right (LiteralExp (BoolVal (lv /= zv))))
+            _ -> trace ("Wrong binary operation: " ++ (show (WrongBinaryOperationContext op l r)))(Left (WrongBinaryOperationContext op l r))
         _ ->
           trace ("Wrong binary operation: " ++ (show (WrongBinaryOperationContext op l r)))(Left (WrongBinaryOperationContext op l r))
     )
   )
 
-eval env (TermExp n args) =
+eval termEnv env (TermExp n args) =
     let
       argsv = (foldl (\l ->
         (\r ->
@@ -492,17 +542,17 @@ eval env (TermExp n args) =
                   Right (rv:lv)
                 Left rv ->
                   Left rv
-            Left lv -> Left lv)) (Right []) (fmap (\v -> (eval env v)) args))
+            Left lv -> Left lv)) (Right []) (fmap (\v -> (eval termEnv env v)) args))
     in
       (case argsv of
         Right v -> Right (TermExp n v)
         Left e -> Left e)
 
-eval env (ListExp EmptyList) = Right (ListExp EmptyList)
+eval _ _ (ListExp EmptyList) = Right (ListExp EmptyList)
 
-eval env (ListExp (EnumeratedList xs)) =
+eval termEnv env (ListExp (EnumeratedList xs)) =
   let
-    args = (fmap (\v -> (eval env v)) xs)
+    args = (fmap (\v -> (eval termEnv env v)) xs)
     result = (foldl (\l ->
         (\r ->
           case l of
@@ -518,12 +568,12 @@ eval env (ListExp (EnumeratedList xs)) =
       Left e -> Left e)
 
 
-eval env (ListExp (ConsList head tail)) = do
-  headv <- (eval env head)
-  tailv <- (eval env tail)
+eval termEnv env (ListExp (ConsList head tail)) = do
+  headv <- (eval termEnv env head)
+  tailv <- (eval termEnv env tail)
   return (ListExp (ConsList headv tailv))
 
-eval env unexpected =
+eval _ _ unexpected =
   trace ("Unexpected input to the eval(x, y): " ++ (show unexpected)) (Left (UnexpectedExpression unexpected))
 
 testParsing :: IO ()
@@ -533,7 +583,7 @@ answerQuery1 :: IO ()
 answerQuery1 = do
   query <- getLine
   putStrLn (show $ do
-    program <- M.runParser (program "test-program") "" "fact(a). man(b, fact(a, b)). fact(a, b). fact(b). factC(A) :- factD('A'  ,   'B',   A). factD(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+    program <- M.runParser (program "test-program") "" "fact(a). man(b, fact(a, a)). fact(a, b). fact(b). factC(A) :- factD(b, a  ,   'B'). factD(B, C, A) :- A > 2, !, fact(C), man(B, fact(C, C))."
     expression <- (M.runParser (expression) "" (pack query))
     let result = (do
         (Program _ stmts) <- program
@@ -543,7 +593,7 @@ answerQuery1 = do
 
 answerQuery :: IO ()
 answerQuery = putStrLn (show $ do
-  program <- M.runParser (program "test-program") "" "fact(a). man(b, fact(a, b)). fact(a, b). fact(b). factC(A) :- factD('A'  ,   'B',   A). factD(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
+  program <- M.runParser (program "test-program") "" "fact(a). man(b, fact(a, b)). fact(a, b). fact(b). factC(A) :- factD('A'). factD(A):-W+W,[X,A],[X|[Y|[]]],not D,fact(D,fact(C)),!Z."
   expression <- M.runParser (expression) "" "man(A, fact(a, X))"
   let result = (do
       (Program _ stmts) <- program
@@ -551,5 +601,12 @@ answerQuery = putStrLn (show $ do
       return (solve stmts expr))
   return result)
 
-
-
+answerQuery3 :: IO ()
+answerQuery3 = putStrLn (show $ do
+  program <- M.runParser (program "test-program") "" "fact(1). fact(2). fact(3). fact(4)."
+  expression <- M.runParser (expression) "" "fact(A)."
+  let result = (do
+      (Program _ stmts) <- program
+      expr <- expression
+      return (solve stmts expr))
+  return result)
