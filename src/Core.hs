@@ -94,7 +94,13 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
     | op == OpCompLt = (LiteralExp (BoolVal (left < right)))
 
   listVariables :: Expression -> [String]
+  listVariables (LiteralExp _) = []
+  listVariables (ExceptionExpression _) = []
+  listVariables CutExp = []
+  listVariables (ClosureExpr _ _ _) = []
   listVariables (VarExp n) = [n]
+  listVariables (UnaryExpression _ left) = (listVariables left)
+  listVariables (BinaryExpression _ left right) = (listVariables left) ++ (listVariables right)
   listVariables (ListExp EmptyList) = []
   listVariables (ListExp (EnumeratedList xs)) = foldl (++) [] (fmap (\v -> listVariables v) xs)
   listVariables (ListExp (ConsList head tail)) = (listVariables head) ++ (listVariables tail)

@@ -26,14 +26,46 @@ module Unify(solve) where
   termId :: String -> Int -> TermId
   termId name argc = name ++ "/" ++ (show argc)
 
+  genSym :: [Expression] -> [(String, Expression)]
+  genSym xs = aux 0 xs []
+    where
+      aux n [] ys = reverse ys
+      aux n (x:xs) ys =
+        case x of
+          VarExp varn -> (aux (n + 1) xs ((varn, VarExp ((varn ++ show n))):ys))
+
+  filterScope :: [Subst] -> [String] -> [Subst]
+  filterScope subst scope = (
+      filter (\sol -> (fst sol) `elem` scope) (subst))
+
+  updateReferences :: [Subst] -> Expression -> Expression
+  updateReferences _ expr @ (LiteralExp _) = expr
+  updateReferences subst (BinaryExpression op left right) =
+    (BinaryExpression op (updateReferences subst left) (updateReferences subst right))
+  updateReferences subst (UnaryExpression op operand) =
+    (UnaryExpression op (updateReferences subst operand))
+  updateReferences _ CutExp = CutExp
+  updateReferences subst (ListExp (EnumeratedList elems)) =
+    (ListExp (EnumeratedList (fmap (\v -> updateReferences subst v) elems)))
+  updateReferences subst (ListExp (ConsList head tail)) =
+    (ListExp (ConsList (updateReferences subst head) (updateReferences subst tail)))
+  updateReferences subst (TermExp n args) =
+    (TermExp n (fmap (\arg -> updateReferences subst arg) args))
+  updateReferences _ expr @ (ClosureExpr _ _ _) = expr  -- fortunately, it is impossible to use functions as a
+                                                        -- value in Prolog
+  updateReferences subst exp @ (VarExp n) =
+    case (filter (\el -> (fst el) == n) subst) of
+      ((_, VarExp n2):_) -> VarExp n2
+      _  -> exp
+
   -- Performs unification between two given expressions, returns a set of solutions where each contains a set of substitutions
   -- which when applied to one side of the unification problem produce the desired outcome.
   unify' :: TermEnv -> [Subst] -> Expression -> Expression -> (Bool, [[Subst]])
   unify' _ _ _ expr @ (ClosureExpr _ _ _) = trace ("Unable to unify expression" ++ (show expr)) (False, [])
-  unify' env subst (VarExp n1) (VarExp n2) = (True, []) -- cannot unify outside of a closure context
+  unify' env subst l @ (VarExp n1) (VarExp n2) = (True, [[(n2, l)]]) -- cannot unify outside of a closure context
   unify' env subst (VarExp n) l @ (LiteralExp _) = (True, [[(n, l)]]) -- cannot unify outside of a closure context
   unify' env subst exp @ (BinaryExpression _ _ _) term @ (TermExp n args) =
-    trace ("Evaluating binary expression " ++ (show exp)) (case (eval subst env H.empty exp) of
+    (case (eval subst env exp) of
       Right solutions ->
         (foldl (\(unifies, lred) ->
           (\(rsubst, rexpr) ->
@@ -48,62 +80,69 @@ module Unify(solve) where
   unify' env subst t @ (TermExp _ _) (VarExp n) = (True, [[(n, t)]])
   unify' env subst v @ (LiteralExp _) (VarExp n) = (True, [[(n, v)]])
   unify' env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
-  unify' env subst (ClosureExpr cn closure_args body) term @ (TermExp tn args)
+
+  -- This unification serves as a sort of 'invocation' for the closure term.
+  --
+  -- Closure arguments are going to be replaced by either values or placeholders from the input term, in the latter case
+  -- we will also have to update closure's body as otherwise we are going to face incorrect naming issues.
+  unify' env subst lambda @ (ClosureExpr cn closure_args body) term @ (TermExp tn args)
     | cn == tn =
-      case (trace ("Unifying closure and term: body " ++ (show body) ++ " term " ++ (show term)) (unify' env subst term (TermExp cn closure_args))) of
-        (True, new_subst) ->
-          trace ("Unified " ++ (show new_subst) ++ ", subst: " ++ (show subst)) (foldl (\(lu, ls) ->
-            (\r ->
-              trace ("Processing solution " ++ (show r)) (let
-                updated_env = (H.fromList r)
-              in
-                trace ("Substitution in lambda " ++ (show new_subst) ++ ", continue evaluation on " ++ (show body)) (case (eval r env updated_env body) of
+      let
+        symbols = (genSym closure_args)
+        closureArgsScoped = fmap (\arg -> (updateReferences symbols arg)) closure_args
+      in
+        trace ("Unifying closure (" ++ (show lambda) ++ ") and term (" ++ (show term) ++ ")") (case (unify' env subst term (TermExp cn closureArgsScoped)) of
+          (True, new_subst) ->
+            (foldl (\(lu, ls) ->
+              (\r ->
+                trace ("Evaluating closure body under the current scope") (case (eval r env (updateReferences r body)) of
                   Right solutions ->
                     let
                       eval_subst = (fmap (\v -> (fst v)) solutions)
                     in
                       (True, (mappend eval_subst ls))
-                  Left e -> trace ("Evaluation failed due to: " ++ (show e)) (lu, ls)))
-          )) (True, []::[[Subst]]) new_subst)
-        (False, _) -> trace ("Unable to unify closure and term " ++ (show term)) (False, [])
+                  Left e -> trace ("Evaluation failed due to: " ++ (show e)) (lu, ls))
+            )) (True, []) new_subst)
+          (False, _) -> trace ("Unable to unify closure and term " ++ (show term)) (False, []))
     | otherwise = (False, [])
 
   unify' env subst term1 @ (TermExp tname1 args1) term2 @ (TermExp tname2 args2)
     | tname1 /= tname2 = (trace ("Name mismatch" ++ (show tname1) ++ (show tname2)))((False, []))
     | (length args1) /= (length args2) = trace ("Args length mismatch" ++ (show tname1)) (False, [])
     | otherwise =
-      trace ("Unifying two terms: term1= " ++ (show term1) ++ " and " ++ (show term2)) (foldl (\l ->
-          (\r ->
-            if (fst l) && (fst r) then
-              (True, (snd l) ++ (snd r))
-            else
-              (False, []))
-          ) (True, []) (fmap (\arg -> trace ("Attempting to unify" ++ (show (fst arg)) ++ " " ++ (show (snd arg))) (unify' env subst (fst arg) (snd arg))) (zip args1 args2)))
+      (foldl (\l ->
+        (\r ->
+          if (fst l) && (fst r) then
+            (True, (snd l) ++ (snd r))
+          else
+            (False, []))
+        ) (True, []) (fmap (\arg -> (unify' env subst (fst arg) (snd arg))) (zip args1 args2)))
   unify' a b c d = trace ("Unexpected input" ++ (show a) ++ " " ++ (show b) ++ " " ++ (show c) ++ " " ++ (show d)) (False, [])
 
   -- Performs unification for a given term against the global execution environment.
-  -- Returns a set of solutions to the unification problem in form of (1, [(A, 10), (B, 20)]) where 1
-  -- is the number of a solution and  (A, 10) and (B, 20) are target substitutions.
+  -- Returns a set of solutions to the unification problem in form of [(A, 10), (B, 20)] where
+  -- (A, 10) and (B, 20) are target substitutions.
   unify :: TermEnv -> [Subst] -> Expression -> (Bool, [[Subst]])
   unify env subst expr @ (TermExp name args) =
     let
       termId' = (termId name (length args))
+      closureScope = (listVariables expr)
     in
       (case (H.lookup termId' env) of
         Just v ->
-          trace ("Resolved expressions for termID: " ++ (show termId') ++ ": " ++ show(v)) (foldl (\(lu, lsols) ->
+          (foldl (\(lu, lsols) ->
             (\r ->
-              case (trace ("Unification result: " ++ (show r)) r) of
+              (case r of
                 (True, rsubst) ->
-                  trace ("[a] Unification result: " ++ (show rsubst)) (True, rsubst ++ lsols)
+                  (True, (rsubst ++ lsols))
                 (False, _) ->
-                  trace ("[b] Unification result: " ++ (show lsols))  (if lu then lu else False, lsols)
+                  (if lu then lu else False, lsols))
             )) (True, []) (fmap (\term -> (unify' env subst term expr)) v))
         Nothing ->
           trace ("Term was not found:" ++ (show termId')) (False, []))
 
   unify env subst expr =
-    trace ("Unification for expression: " ++ (show expr)) (case (eval subst env H.empty expr) of
+    (case (eval subst env expr) of
       Right sols -> (True, fmap (\v ->  (fst v)) sols )
       Left e -> trace ("Expression evaluation failed: " ++ (show e)) (False, []))
 
@@ -124,11 +163,11 @@ module Unify(solve) where
   --- Evaluates expression producing either exception or a set of solutions where each solution consists of:
   --- - substitution results
   --- - reduced expression (only vals or non-reducable var/closure expressions)
-  eval :: [Subst] -> TermEnv -> EvalEnv -> Expression -> Either Exception [([Subst], Expression)]
+  eval :: [Subst] -> TermEnv -> Expression -> Either Exception [([Subst], Expression)]
 
-  eval _ _ _ v @ (LiteralExp _) = Right [([], v)]
+  eval _ _ v @ (LiteralExp _) = Right [([], v)]
 
-  eval subst termEnv env v @ (VarExp n) =
+  eval subst termEnv v @ (VarExp n) =
       case subst of
         [] -> trace ("No substitutions to proceed with the evaluation: " ++ (show n)) (Right [([], v)])
         _ ->
@@ -136,46 +175,55 @@ module Unify(solve) where
             [] -> Right [([], v)]
             (x:_) -> Right [([], x)])
 
-  eval subst termEnv env (BinaryExpression op left right) =
-    trace ("Binary expression: LEFT(" ++ (show left) ++ ") RIGHT(" ++ (show right) ++ ") SUBST(" ++ (show subst) ++ ")") (
-      case trace ("Left operand evaluation: " ++ (show left) ++ " " ++ (show subst))  (eval subst termEnv env left) of
-        Right leftSol ->
-          let
-            result = (sequence (fmap (\(sub, expr) ->
-              trace ("Right operand evaluation: " ++ (show right)) (eval (subst ++ sub) termEnv env right)) leftSol))
-            rightSols = fmap (\v -> v >>= id) result
-            result2 = (fmap (\rightSol ->
-              (fmap (\(left, right) ->
-                if (isCompOp op) then
-                  case (left, right) of
-                    ((lsub, le @ (LiteralExp _)), (rsub, re @ (LiteralExp _))) ->
-                      trace("LiteralExp vs LiteralExp" ++ (show le) ++ " " ++ (show re)) (lsub ++ rsub, (compareOp op le re))
-                    ((lsub, le), (rsub, re @ (TermExp n args))) ->
-                      trace("LiteralExp vs TermExp" ++ (show le) ++ " " ++ (show re)) (lsub ++ rsub, (compareOp op le re))
-                    ((lsub, le), (rsub, re)) ->
-                      trace ("Unsupported comparison: " ++ (show le) ++ " " ++ (show re) ++ " " ++ (show (lsub ++ rsub))) (lsub ++ rsub, (ExceptionExpression (WrongBinaryOperationContext op le re)))
-                else if (isBinaryLogicalOp op) then
-                  case (left, right) of
-                     ((lsub, le @ (LiteralExp _)), (rsub, re @ (LiteralExp _))) ->
-                        trace("LiteralExp vs LiteralExp" ++ (show le) ++ " " ++ (show re)) (lsub ++ rsub, (binaryLogicalOp op le re))
-                     ((lsub, le), (rsub, re)) ->
-                        (lsub ++ rsub, (ExceptionExpression (WrongBinaryOperationContext op le re)))
-                else
-                  case (left, right) of
-                    ((lsub, vl @ (LiteralExp _)), (rsub, vr @ (LiteralExp _))) ->
-                      trace("LiteralExp vs LiteralExp" ++ (show vl) ++ " " ++ (show vr)) (lsub ++ rsub, vl)
-                    ((lsub, le), (rsub, re)) ->
-                      (lsub ++ rsub, (ExceptionExpression (WrongBinaryOperationContext op le re)))
-              ) (zip leftSol rightSol))) rightSols)
-          in (trace ("Evaluation result: " ++ (show result2)) (result2))
-        Left e -> Left e)
+  eval subst termEnv exp @ (BinaryExpression op left right) =
+    let
+      closureScope = listVariables exp
+    in
+      (case trace ("Left operand evaluation: " ++ (show left) ++ " " ++ (show subst))  (eval subst termEnv left) of
+          Right leftSol ->
+            let
+              rightSols = fmap (\v -> v >>= id) (sequence (fmap (\(sub, expr) ->
+                (eval (subst ++ sub) termEnv right)) leftSol))
+              evaluationResult = (fmap (\rightSol ->
+                (fmap (\(left, right) ->
+                  let
+                    expr =
+                      if (isCompOp op) then
+                        case (left, right) of
+                          ((_, le @ (LiteralExp _)), (rsub, re @ (LiteralExp _))) ->
+                            (compareOp op le re)
+                          ((_, le), (_, re @ (TermExp n args))) ->
+                            (compareOp op le re)
+                          ((_, le), (_, re)) ->
+                            (ExceptionExpression (WrongBinaryOperationContext op le re))
+                      else if (isBinaryLogicalOp op) then
+                        case (left, right) of
+                           ((_, le @ (LiteralExp _)), (rsub, re @ (LiteralExp _))) ->
+                              (binaryLogicalOp op le re)
+                           ((_, le), (_, re)) ->
+                              (ExceptionExpression (WrongBinaryOperationContext op le re))
+                      else
+                        case (left, right) of
+                          ((_, vl @ (LiteralExp _)), (_, vr @ (LiteralExp _))) ->
+                            vl
+                          ((_, le), (_, re)) ->
+                            (ExceptionExpression (WrongBinaryOperationContext op le re))
+                  in
+                    (case (left, right) of
+                      ((lsub, _), (rsub, _)) ->
+                        (scopedSubstitutions, expr)
+                          where
+                            scopedSubstitutions = filterScope (lsub ++ rsub ++ subst) closureScope)
+                ) (zip leftSol rightSol))) rightSols)
+            in evaluationResult
+          Left e -> Left e)
 
-  eval subst termEnv env (TermExp n args) =
+  eval subst termEnv (TermExp n args) =
     let
       r2 = sequence ((fmap (\arg ->
           (fmap (\solutions ->
             (arg, (fmap (\sol -> (snd sol)) solutions))
-          ) (eval subst termEnv env arg)
+          ) (eval subst termEnv arg)
         )) args))
       merged = trace ("Resolved arguments " ++ (show r2)) (case r2 of
         Right mv ->
@@ -196,7 +244,7 @@ module Unify(solve) where
     in
       trace ("Final evaluation result is: " ++ (show merged) ++ ", subst: " ++ (show subst)) (merged)
 
-  eval _ _ _ unexpected =
+  eval _ _ unexpected =
     trace ("Unexpected input to the eval(x, y): " ++ (show unexpected)) (Left (UnexpectedExpression unexpected))
 
   processInstructions :: [Statement] -> IO (Either [String] [Statement])
@@ -227,13 +275,18 @@ module Unify(solve) where
       where
         aux (Left ex) = Left ex
         aux (Right []) = Left ["No statements provided"]
-        aux (Right stms) = (case result of
-            (True, subst) -> Right subst
-            (False, _) -> Left ["Unification failed"]
-          )
+        aux (Right stms) =
+            if(unifies) then
+              Right substitutions
+            else
+              Left ["Unification failed"]
           where
             closures = (map (\v -> case v of
                (RuleStmt n args (Just body)) -> ((termId n (length args)), [(ClosureExpr n args body)])
                (RuleStmt n args Nothing) -> ((termId n (length args)), [(TermExp n args)])) stms)
             termEnv = (H.fromListWith (++) closures)
-            result = unify termEnv [] expr
+            variables = listVariables expr
+            (unifies, substs) = (unify termEnv [] expr)
+            substitutions = trace ("\n Expression: " ++ (show expr) ++ ", scope: " ++ (show variables) ++ ", resulting subs: " ++ (show substs)) (
+              fmap (\sub -> filterScope sub variables) substs)
+
