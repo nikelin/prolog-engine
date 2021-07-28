@@ -2,9 +2,9 @@ name:                prolog-engine
 version:             0.1.0.0
 github:              "Github nikelin/prolog-engine"
 license:             BSD3
-author:              "Cyril Karpenko"
-maintainer:          "self@nikelin.ru"
-copyright:           "2021 Cyril Karpenko"
+author:              "Cyril Karpenko <kyrylok2@illinois.edu>"
+maintainer:          "Cyril Karpenko <self@nikelin.ru>"
+copyright:           "2021 Cyril Karpenko <kyrylok2@illinois.edu>"
 
 extra-source-files:
 - README.md

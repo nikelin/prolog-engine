@@ -9,9 +9,9 @@ version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/nikelin/prolog-engine#readme>
 homepage:       https://github.com/Github nikelin/prolog-engine#readme
 bug-reports:    https://github.com/Github nikelin/prolog-engine/issues
-author:         Cyril Karpenko
-maintainer:     self@nikelin.ru
-copyright:      2021 Cyril Karpenko
+author:         Cyril Karpenko <kyrylok2@illinois.edu>
+maintainer:     Cyril Karpenko <self@nikelin.ru>
+copyright:      2021 Cyril Karpenko <kyrylok2@illinois.edu>
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -25,7 +25,9 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Core
+      Parse
+      Unify
   other-modules:
       Paths_prolog_engine
   hs-source-dirs:
