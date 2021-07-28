@@ -20,7 +20,7 @@ module Main where
   answerQuery3 :: IO ()
   answerQuery3 = let
       result = (do
-        parsedp <- M.runParser (program "test-program") "" "consult('G:/repositories/test.pl'). fact(10,1). fact(9,2). fact(8,3). fact(7,4). factC(X) :- fact(A,X), A > 9."
+        parsedp <- M.runParser (program "test-program") "" "consult('G:/repositories/test.pl'). fact(10,1). fact(9,2). fact(8,3). fact(7,4). fact(7,5). fact(7,6). factC(X) :- fact(A,X), A > 9."
         parsede <- M.runParser (expression) "" "factC(7)."
         return (parsedp >>= (\p -> fmap (\e -> (p, e)) parsede)))
     in
