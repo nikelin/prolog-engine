@@ -11,7 +11,7 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
             List(ConsList, EnumeratedList, EmptyList),
             Exception(UnknownVariableException, UnexpectedExpression, WrongBinaryOperationContext, WrongUnaryOperationContext),
             Expression(ExceptionExpression, VarExp, TermExp, LiteralExp, CutExp, ClosureExpr, ListExp, UnaryExpression, BinaryExpression),
-            Statement(RuleStmt),
+            Statement(RuleStmt, ConsultStmt),
             Program(Program),
             isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
 
@@ -57,7 +57,8 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
       (StringVal s1) `compare` (StringVal s2) = s1 `compare` s2
       (AtomVal _) `compare` (AtomVal _) = GT
 
-  data Statement = RuleStmt String [Expression] (Maybe Expression)
+  data Statement = ConsultStmt String |
+                   RuleStmt String [Expression] (Maybe Expression)
                    deriving (Show, Eq)
 
   data Program = Program String [Statement]

@@ -9,9 +9,15 @@ module Unify(solve) where
   import qualified Data.HashMap.Strict as H (HashMap, unions, insert, fromListWith, lookup, empty, fromList, toList, union, unionWith)
   import Core
   import Debug.Trace
-
+  import System.IO
+  import Parse
+  import Text.Megaparsec (Parsec)
+  import qualified Text.Megaparsec as M
+  import qualified Text.Megaparsec.Error
+  import qualified Text.Megaparsec.Char as M
+  import qualified Text.Megaparsec.Char.Lexer as L
+  import Data.Text (strip, unpack, Text, pack)
   import Control.Monad (sequence)
-
   type Subst = (String, Expression)
   type TermId = String
   type TermEnv = H.HashMap TermId [Expression]
@@ -192,13 +198,41 @@ module Unify(solve) where
   eval _ _ _ unexpected =
     trace ("Unexpected input to the eval(x, y): " ++ (show unexpected)) (Left (UnexpectedExpression unexpected))
 
-  solve :: [Statement] -> Expression -> Either [String] [[Subst]]
-  solve statements expr = (case result of
-    (False, _) -> (Left ["unification failed"])
-    (True, substList) -> Right substList)
+  processInstructions :: [Statement] -> IO (Either [String] [Statement])
+  processInstructions [] = return (Right [])
+  processInstructions (stmt:xs) = case stmt of
+    (ConsultStmt resource) ->
+      trace ("Trying to load " ++ (show resource)) (do
+        result <- (do
+          handle <- openFile resource ReadMode
+          contents <- hGetContents handle
+          return (M.runParser (program resource) "" (pack contents)))
+        res <- (case result of
+            (Right (Right (Program _ newstms))) ->
+              fmap (\v -> fmap (\vr -> newstms ++ vr) v ) (processInstructions xs)
+            Left e ->
+              return (Left (["consult() failed to load instructions from the file: " ++ (show resource)]))
+          )
+        return res)
+    _ ->
+      fmap (\v ->
+        fmap (\results ->
+          (stmt:results)
+        ) v) (processInstructions xs)
+
+  solve :: [Statement] -> Expression -> IO (Either [String] [[Subst]])
+  solve statements expr =
+    fmap (\stms -> aux stms) (processInstructions statements)
       where
-        closures = (map (\v -> case v of
-           (RuleStmt n args (Just body)) -> ((termId n (length args)), [(ClosureExpr n args body)])
-           (RuleStmt n args Nothing) -> ((termId n (length args)), [(TermExp n args)])) statements)
-        termEnv = (H.fromListWith (++) closures)
-        result = unify termEnv [] expr
+        aux (Left ex) = Left ex
+        aux (Right []) = Left ["No statements provided"]
+        aux (Right stms) = (case result of
+            (True, subst) -> Right subst
+            (False, _) -> Left ["Unification failed"]
+          )
+          where
+            closures = (map (\v -> case v of
+               (RuleStmt n args (Just body)) -> ((termId n (length args)), [(ClosureExpr n args body)])
+               (RuleStmt n args Nothing) -> ((termId n (length args)), [(TermExp n args)])) stms)
+            termEnv = (H.fromListWith (++) closures)
+            result = unify termEnv [] expr

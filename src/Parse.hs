@@ -10,7 +10,7 @@ module Parse (program, expression, rule) where
 
   import Data.Data
   import Debug.Trace
-  import Control.Applicative 
+  import Control.Applicative
   import Data.Char
   import Data.Monoid
   import Data.Text (strip, unpack, Text, pack)
@@ -198,6 +198,13 @@ module Parse (program, expression, rule) where
     result <- (M.between (M.optional M.space) (M.optional M.space) (identifier True))
     return (Right (VarExp result))
 
+  consult :: MParser (Either String Statement)
+  consult = do
+    void $ symbol "consult"
+    resource <- parens (M.between (symbol "'") (symbol "'") (M.manyTill M.printChar (M.lookAhead "'")))
+    symbol "."
+    return (Right (ConsultStmt resource))
+
   rule :: MParser (Either String Statement)
   rule = do
     name <- (identifier False)
@@ -242,7 +249,7 @@ module Parse (program, expression, rule) where
 
   program :: String -> MParser (Either String Program)
   program name = do
-    result <- (M.many rule)
+    result <- (M.many ((M.try consult) <|> rule) )
     let statements = (foldl (\l -> \r ->
             case l of
               (Right lv) ->
