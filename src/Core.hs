@@ -20,12 +20,12 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
              FloatVal Float |
              StringVal String |
              BoolVal Bool
-             deriving (Show, Eq)
+             deriving (Eq)
 
   type Identifier = String
 
   data Operator = OpAdd | OpMin | OpMult | OpDiv | OpAnd | OpOr | OpCompLt | OpCompLte | OpCompGt | OpCompGte |
-                  OpEq | OpNotEq | OpNot deriving (Show, Eq)
+                  OpEq | OpNotEq | OpNot deriving (Eq)
 
   data List = ConsList Expression Expression |
               EnumeratedList [Expression] |
@@ -48,7 +48,7 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
                     UnaryExpression Operator Expression |
                     BinaryExpression Operator Expression Expression |
                     ExceptionExpression Exception
-                    deriving (Show, Eq)
+                    deriving (Eq)
 
   instance Ord Val where
       (IntVal s1) `compare` (IntVal s2) = s1 `compare` s2
@@ -63,6 +63,38 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
 
   data Program = Program String [Statement]
                     deriving (Show, Eq)
+
+  instance Show Operator where
+    show (OpAnd) = "&&"
+    show (OpNot) = "!"
+    show (OpNotEq) = "!="
+    show (OpOr) = "||"
+    show (OpCompLt) = "<"
+    show (OpCompGt) = ">"
+    show (OpCompGte) = ">="
+    show (OpCompLte) = "<="
+    show (OpEq) = "=="
+    show (OpMin) = "-"
+    show (OpDiv) = "/"
+    show (OpAdd) = "+"
+    show (OpMult) = "*"
+
+  instance Show Expression where
+    show (VarExp n) = n
+    show (TermExp n args) = (n ++ "(" ++ ((fmap (\v -> ((show v) ++ ",")) args) >>= id) ++ ")")
+    show (ClosureExpr n args body) = (n ++ "(" ++ ((fmap show args) >>= id) ++ ") :- " ++ (show body))
+    show CutExp = "!"
+    show (LiteralExp v) = (show v)
+    show (ListExp (EnumeratedList xs)) = show xs
+    show (ListExp (ConsList head tail)) = ("[" ++ (show head ) ++ " | " ++ (show tail) ++ "]")
+    show (UnaryExpression op exp) = (show op) ++ (show exp)
+    show (BinaryExpression op left right) = (show left) ++ " " ++ (show op) ++ " " ++ (show right)
+    show (ExceptionExpression e) = "exception " ++ (show e)
+
+  instance Show Val where
+    show (BoolVal v) = show v
+    show (IntVal v) = show v
+    show (StringVal v) = v
 
   isCompOp :: Operator -> Bool
   isCompOp op

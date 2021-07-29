@@ -16,6 +16,8 @@ module Main where
   import qualified Text.Megaparsec.Char as M
   import qualified Text.Megaparsec.Char.Lexer as L
   import Data.Text (strip, unpack, Text, pack)
+  import Control.Monad
+  import Debug.Trace
 
   answerQuery3 :: IO ()
   answerQuery3 = let
@@ -27,11 +29,17 @@ module Main where
       (case result of
         Right (Right (Program _ stmts, expr)) ->
           solve stmts expr >>= (\result ->
-            putStrLn ("[ok] Result: " ++ (show result))
+            case (result) of
+              Right solutions ->
+                do
+                  putStrLn "- yes"
+                  putStrLn (join $ fmap (\solution ->
+                      "Solution: \n\r" ++ (join (fmap (\subst -> (fst subst) ++ " = " ++ (show (snd subst)) ++ "\n\r") solution))
+                    ) solutions)
+              Left e -> putStrLn "- no"
           )
         (Left pe) -> putStrLn ("[error] Failed to parse the program: " ++ (show pe))
       )
-
 
   main :: IO ()
   main = answerQuery3
