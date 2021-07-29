@@ -16,26 +16,27 @@ module Main where
   import qualified Text.Megaparsec.Char as M
   import qualified Text.Megaparsec.Char.Lexer as L
   import Data.Text (strip, unpack, Text, pack)
+  import Data.Set as S
   import Control.Monad
   import Debug.Trace
 
   answerQuery3 :: IO ()
   answerQuery3 = let
       result = (do
-        parsedp <- M.runParser (program "test-program") "" "consult('G:/repositories/test.pl'). fact(10,1). fact(9,2). fact(8,3). fact(7,4). fact(7,5). fact(7,6). factC(X) :- fact(A,X), A > 1."
+        parsedp <- M.runParser (program "test-program") "" "consult('G:/repositories/test.pl'). fact(10,1). fact(9,2). fact(8,3). fact(7,4). fact(7,5). fact(7,6). factC(X) :- fact(A,X), !, A > 1."
         parsede <- M.runParser (expression) "" "factC(A)."
         return (parsedp >>= (\p -> fmap (\e -> (p, e)) parsede)))
     in
       (case result of
         Right (Right (Program _ stmts, expr)) ->
-          solve stmts expr >>= (\result ->
+          trace ("Statements: " ++ (show stmts)) solve stmts expr >>= (\result ->
             case (result) of
               Right solutions ->
                 do
                   putStrLn "- yes"
-                  putStrLn (join $ fmap (\solution ->
-                      "Solution: \n\r" ++ (join (fmap (\subst -> (fst subst) ++ " = " ++ (show (snd subst)) ++ "\n\r") solution))
-                    ) solutions)
+                  putStrLn (join $ (fmap (\solution ->
+                      "Solution: \n\r" ++ (join (S.toList (S.map (\subst -> (fst subst) ++ " = " ++ (show (snd subst)) ++ "\n\r") solution)))
+                    ) solutions))
               Left e -> putStrLn "- no"
           )
         (Left pe) -> putStrLn ("[error] Failed to parse the program: " ++ (show pe))

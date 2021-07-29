@@ -10,7 +10,7 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
             Operator(OpAdd, OpMin, OpMult, OpDiv, OpAnd, OpOr, OpCompLt, OpCompLte, OpCompGt, OpCompGte, OpEq, OpNotEq, OpNot),
             List(ConsList, EnumeratedList, EmptyList),
             Exception(UnknownVariableException, UnexpectedExpression, WrongBinaryOperationContext, WrongUnaryOperationContext),
-            Expression(ExceptionExpression, VarExp, TermExp, LiteralExp, CutExp, ClosureExpr, ListExp, UnaryExpression, BinaryExpression),
+            Expression(ExceptionExpression, VarExp, TermExp, LiteralExp, CutOperatorExp, CutExp, ClosureExpr, ListExp, UnaryExpression, BinaryExpression),
             Statement(RuleStmt, ConsultStmt),
             Program(Program),
             isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
@@ -42,7 +42,8 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
   data Expression = VarExp String |
                     TermExp String [Expression] |
                     LiteralExp Val |
-                    CutExp |
+                    CutOperatorExp |
+                    CutExp Expression |
                     ClosureExpr String [Expression] Expression |
                     ListExp List |
                     UnaryExpression Operator Expression |
@@ -83,13 +84,17 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
     show (VarExp n) = n
     show (TermExp n args) = (n ++ "(" ++ ((fmap (\v -> ((show v) ++ ",")) args) >>= id) ++ ")")
     show (ClosureExpr n args body) = (n ++ "(" ++ ((fmap show args) >>= id) ++ ") :- " ++ (show body))
-    show CutExp = "!"
+    show CutOperatorExp = "!"
+    show (CutExp exp) = "!(" ++ (show exp) ++ ")"
     show (LiteralExp v) = (show v)
     show (ListExp (EnumeratedList xs)) = show xs
     show (ListExp (ConsList head tail)) = ("[" ++ (show head ) ++ " | " ++ (show tail) ++ "]")
     show (UnaryExpression op exp) = (show op) ++ (show exp)
     show (BinaryExpression op left right) = (show left) ++ " " ++ (show op) ++ " " ++ (show right)
     show (ExceptionExpression e) = "exception " ++ (show e)
+
+  instance Ord Expression where
+      compare l r = compare (show l) (show r)
 
   instance Show Val where
     show (BoolVal v) = show v
@@ -127,8 +132,9 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
 
   listVariables :: Expression -> [String]
   listVariables (LiteralExp _) = []
+  listVariables (CutExp exp) = listVariables exp
   listVariables (ExceptionExpression _) = []
-  listVariables CutExp = []
+  listVariables CutOperatorExp = []
   listVariables (ClosureExpr _ _ _) = []
   listVariables (VarExp n) = [n]
   listVariables (UnaryExpression _ left) = (listVariables left)

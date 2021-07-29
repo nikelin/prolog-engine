@@ -135,7 +135,7 @@ module Parse (program, expression, rule) where
   cutExp :: MParser (Either String Expression)
   cutExp = do
     symbol "!"
-    return (Right CutExp)
+    return (Right CutOperatorExp)
 
   consList :: MParser (Either String Expression)
   consList = do
@@ -225,18 +225,20 @@ module Parse (program, expression, rule) where
       predicates <- M.sepBy1 (do
         exp <- expression
         return exp) (M.optional (symbol "," <|> symbol ";"))
-      return (foldl (\l ->
-        \vv ->
-          case vv of
-            (Right v) ->
-              case l of
-                Left lv -> Left lv
-                Right lv -> (Right (BinaryExpression OpAnd lv v))
-            (Left v) ->
-              case l of
-                Left lv -> Left (lv ++ v)
-                Right _ -> Left v
-        ) ((Right (LiteralExp (BoolVal True))) :: (Either String Expression)) predicates)
+      let cutExpPredicates = foldl (\l ->
+            (\r ->
+              r >>= (\rv ->
+                (fmap (\lv ->
+                  case rv of
+                    CutOperatorExp ->
+                      case lv of
+                         (head:tail) ->
+                            ((CutExp head) : tail)
+                    _ -> (rv:lv)
+                  ) l))
+            )) (Right []) predicates
+      return (fmap (\vb ->
+        (foldl (\l -> \r -> (BinaryExpression OpAnd r l)) (LiteralExp (BoolVal True)) vb)) cutExpPredicates)
     (symbol ".")
     return (case argsv of
       Right argsvv ->
