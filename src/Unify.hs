@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Unify(solve) where
+module Unify(solve, processInstructions, eval) where
   import qualified Data.HashMap.Strict as H (HashMap, unions, insert, fromListWith, lookup, empty, fromList, toList, union, unionWith)
   import qualified Data.Set as S
   import Core
