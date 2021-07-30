@@ -19,6 +19,8 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Text (strip, unpack, Text, pack)
 import Control.Monad
 
+import Debug.Trace
+
 -- ndetake source: https://stackoverflow.com/a/54130302
 ndetake :: Int -> [a] -> [[a]]
 ndetake n xs = go (length xs) n xs
@@ -32,6 +34,43 @@ ndetake n xs = go (length xs) n xs
 
 main :: IO ()
 main = hspec $ do
+  describe "statements parsing" $ do
+    it "a single fact" $ do
+      M.runParser (program "test") "" "factC(A)." `shouldBe` (Right (Right (Program "test" [(RuleStmt "factC" [VarExp "A"] Nothing)])))
+
+    it "multiple facts (no body)" $ do
+      let facts = (take 100 (repeat ("factC(1, a, d).", RuleStmt "factC" [(LiteralExp (IntVal 1)), (LiteralExp (AtomVal "a")), (LiteralExp (AtomVal "d"))] Nothing)))
+      let results = (fmap (\fact ->
+              case (M.runParser (program "test") "" (fst fact)) of
+                (Right (Right (Program _ stms))) ->
+                  (length stms) == 1 && (head stms) == (snd fact)
+                _ -> False
+            ) facts)
+      results `shouldBe` (take 100 (repeat True))
+
+    it "multiple facts (with body)" $ do
+      let facts = (take 100 (repeat ("factC(X, A, D) :- X > A, A > D, fact(D).",
+            RuleStmt "factC" [VarExp "X", VarExp "A", VarExp "D"] (Just
+              (BinaryExpression OpAnd
+                (BinaryExpression OpCompGt (VarExp "X") (VarExp "A"))
+                (BinaryExpression OpAnd
+                  (BinaryExpression OpCompGt (VarExp "A") (VarExp "D"))
+                  (BinaryExpression OpAnd 
+                    (TermExp "fact" [VarExp "D"])
+                    (LiteralExp (BoolVal True)))
+              ))))))
+      let results = (fmap (\fact ->
+              case (M.runParser (program "test") "" (fst fact)) of
+                (Right (Right (Program _ stms))) ->
+                  let
+                    result = (length stms) == 1 && (head stms) == (snd fact)
+                  in
+                    if result then result
+                    else trace("Length: expected=1, actual=" ++ (show (length stms)) ++ "\n\r Value: expected=" ++ (show (snd fact)) ++ ", actual: " ++ (show (head stms))) result
+                _ -> False
+            ) facts)
+      results `shouldBe` (take 100 (repeat True))
+
   describe "expressions parsing" $ do
     it "a parameterised term expression (1)" $ do
       M.runParser (expression) "" "factC(A)." `shouldBe` (Right (Right (TermExp "factC" [VarExp "A"])))
@@ -65,7 +104,8 @@ main = hspec $ do
                         , ("False", (LiteralExp (BoolVal False)))
                         , ("True", (LiteralExp (BoolVal True)))
                         , ("name()", (TermExp "name" []))
-                        , ("name(B)", (TermExp "name" [VarExp "B"]))]
+                        , ("name(B)", (TermExp "name" [VarExp "B"]))
+                        , ("term(a)", (TermExp "term" [LiteralExp (AtomVal "a")]))]
 
       let expected = (Right [Right (UnaryExpression OpNot (LiteralExp (BoolVal False)))
                             , Right (UnaryExpression OpMin (LiteralExp (BoolVal False)))])
@@ -90,7 +130,3 @@ main = hspec $ do
       let expected = (Right [Right (UnaryExpression OpNot (LiteralExp (BoolVal False)))
                             , Right (UnaryExpression OpMin (LiteralExp (BoolVal False)))])
       (sequence $ fmap (\op -> M.runParser (expression) "" (pack ((fst op) ++ "False"))) ops) `shouldBe` expected
-
-  describe "Prelude.head" $ do
-    it "[1] simple unification" $ do
-      head [23 ..] `shouldBe` (23 :: Int)
