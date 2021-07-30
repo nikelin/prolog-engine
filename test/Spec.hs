@@ -74,6 +74,26 @@ main = hspec $ do
         let expression = (TermExp "check-a" [LiteralExp (IntVal 6)])
         (unify termsEnv S.empty expression) `shouldBe` (True, [])
 
+      it "unify(rule) recursive, positive, with subst" $ do
+        let termsEnv = H.fromListWith (++) [
+              -- first term: check-a(X) :- X > 7.
+              ("check-a/1", [ClosureExpr "check-a" [VarExp "X"] (BinaryExpression OpAnd (TermExp "check-a" [VarExp "X", VarExp "Y"])
+                  (BinaryExpression OpCompGt (VarExp "Y") (LiteralExp (IntVal 7))))])
+              -- second term: check-a(X, Y) :- X > Y.
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 10), LiteralExp (IntVal 10)]])
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 10), LiteralExp (IntVal 9)]])
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 10), LiteralExp (IntVal 8)]])
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 10), LiteralExp (IntVal 6)]])
+               ]
+        let expression = (TermExp "check-a" [VarExp "X"])
+        let solutions = (unify termsEnv S.empty expression)
+        solutions `shouldBe` (True, [
+          S.fromList [("X", (LiteralExp (IntVal 10)))]
+          , S.fromList [("X", (LiteralExp (IntVal 9)))]
+          , S.fromList [("X", (LiteralExp (IntVal 8)))]
+          ])
+
+
   describe "Parsing" $ do
     describe "instructions support" $ do
       it "a consult instruction" $ do
