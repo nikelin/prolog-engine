@@ -19,6 +19,17 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Text (strip, unpack, Text, pack)
 import Control.Monad
 
+-- ndetake source: https://stackoverflow.com/a/54130302
+ndetake :: Int -> [a] -> [[a]]
+ndetake n xs = go (length xs) n xs
+    where
+    go spare n _  | n >  spare = []
+    go spare n xs | n == spare = [xs]
+    go spare 0 _      =  [[]]
+    go spare n []     =  []
+    go spare n (x:xs) =  map (x:) (go (spare-1) (n-1) xs)
+                            ++     go (spare-1)  n   xs
+
 main :: IO ()
 main = hspec $ do
   describe "expressions parsing" $ do
@@ -46,6 +57,30 @@ main = hspec $ do
 
     it "a binary expression (simple) - literal and literal" $ do
       M.runParser (expression) "" "25 and False" `shouldBe` (Right (Right (BinaryExpression OpAnd (LiteralExp (IntVal 25)) (LiteralExp (BoolVal False)))))
+
+    it "a binary expression (simple) [all operators]" $ do
+      let ops = [("not", OpNot), ("-", OpMin)]
+      let operands = [("A", VarExp "A")
+                        , ("2", LiteralExp (IntVal 2))
+                        , ("False", (LiteralExp (BoolVal False)))
+                        , ("True", (LiteralExp (BoolVal True)))
+                        , ("name()", (TermExp "name" []))
+                        , ("name(B)", (TermExp "name" [VarExp "B"]))]
+
+      let expected = (Right [Right (UnaryExpression OpNot (LiteralExp (BoolVal False)))
+                            , Right (UnaryExpression OpMin (LiteralExp (BoolVal False)))])
+
+      let testPairs = ndetake 2 operands
+      let results = ops >>= (\op ->
+            fmap (\pair ->
+              case pair of
+                (left:(right:[])) ->
+                  case M.runParser (expression) "" (pack ((fst left) ++ " " ++ (fst op) ++ " " ++ (fst right))) of
+                    (Right (Right exp)) ->
+                      exp == (BinaryExpression (snd op) (snd left) (snd right))
+                    _ -> False
+              ) testPairs)
+      results `shouldBe` (take ((length testPairs) * (length ops)) (repeat True))
 
     it "cons list" $ do
       M.runParser (expression) "" "[A | [B | [C | []]]]]" `shouldBe` (Right (Right (ListExp (ConsList (VarExp "A") (ListExp (ConsList (VarExp "B") (ListExp (ConsList (VarExp "C") (ListExp EmptyList)))))))))
