@@ -33,8 +33,8 @@ module Parse (program, expression, rule) where
     return ()
 
   boolean :: MParser Val
-  boolean = M.try ( M.string "True"  >> return (BoolVal True)  )
-             <|> M.try ( M.string "False" >> return (BoolVal False) )
+  boolean = ( symbol "True"  >> return (BoolVal True)  )
+             <|> ( symbol "False" >> return (BoolVal False) )
 
   sc :: MParser ()
   sc = L.space
@@ -64,8 +64,7 @@ module Parse (program, expression, rule) where
 
   unaryOperator :: MParser Operator
   unaryOperator = (M.chunk "-" *> (return OpMin)) <|>
-      (symbol "not" *> (return OpNot)) <|>
-      (symbol "!" *> (return OpNot))
+      (symbol "not" *> (return OpNot))
 
   binaryOperator :: MParser Operator
   binaryOperator = unaryOperator <|>
@@ -84,7 +83,9 @@ module Parse (program, expression, rule) where
   binaryOperation :: MParser (Either String Expression)
   binaryOperation = do
     left <- (expression1 True)
+    void $ M.space
     op <- (fmap Right binaryOperator)
+    void $ M.space
     right <- (expression1 True)
     return (do
       l <- left
@@ -101,7 +102,7 @@ module Parse (program, expression, rule) where
   termExp :: MParser (Either String Expression)
   termExp = do
     name <- (identifier False)
-    argsList <- (parens (M.sepBy1 expression (symbol ",")))
+    argsList <- (parens (M.sepBy expression (symbol ",")))
     let (args :: Either String [Expression]) = foldl (\l ->
           \r ->
             case r of
@@ -113,11 +114,11 @@ module Parse (program, expression, rule) where
                 case l of
                   (Right _) -> (Left err)
                   (Left lv) -> (Left (lv ++ ", " ++ err))) (Right []) argsList
-    return (fmap (\v -> (TermExp name v)) args)
+    return (fmap (\v -> (TermExp name (reverse v))) args)
 
   literalExp :: MParser (Either String Expression)
   literalExp = do
-    v <- M.choice [(fmap Right integer), (fmap Right float), (fmap Right stringExp), (fmap Right atom)]
+    v <- M.choice [(fmap Right boolean), (fmap Right integer), (fmap Right float), (fmap Right stringExp), (fmap Right atom)]
     return (fmap (\vf -> LiteralExp vf) v)
 
   expression :: MParser (Either String Expression)
@@ -126,10 +127,10 @@ module Parse (program, expression, rule) where
   expression1 :: Bool -> MParser (Either String Expression)
   expression1 isSubExpression
     | isSubExpression == False = do
-        op <- listExp <|> cutExp <|> M.try unaryOperation  <|> M.try termExp <|> M.try binaryOperation <|> variableExp <|> literalExp
+        op <- M.try binaryOperation <|> listExp <|> cutExp <|> M.try unaryOperation  <|> M.try termExp <|> M.try literalExp <|> variableExp
         return op
     | otherwise = do
-        op <- M.try listExp <|> cutExp <|> M.try (parens unaryOperation)  <|> M.try termExp <|> M.try (parens binaryOperation) <|> variableExp <|> literalExp
+        op <- M.try listExp <|> cutExp <|> M.try (parens unaryOperation)  <|> M.try termExp <|> M.try (parens binaryOperation) <|> M.try literalExp <|> variableExp
         return op
 
   cutExp :: MParser (Either String Expression)

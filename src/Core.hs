@@ -20,12 +20,12 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
              FloatVal Float |
              StringVal String |
              BoolVal Bool
-             deriving (Eq)
+             deriving (Show, Eq)
 
   type Identifier = String
 
   data Operator = OpAdd | OpMin | OpMult | OpDiv | OpAnd | OpOr | OpCompLt | OpCompLte | OpCompGt | OpCompGte |
-                  OpEq | OpNotEq | OpNot deriving (Eq)
+                  OpEq | OpNotEq | OpNot deriving (Show, Eq)
 
   data List = ConsList Expression Expression |
               EnumeratedList [Expression] |
@@ -49,7 +49,7 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
                     UnaryExpression Operator Expression |
                     BinaryExpression Operator Expression Expression |
                     ExceptionExpression Exception
-                    deriving (Eq)
+                    deriving (Show, Eq)
 
   instance Ord Val where
       (IntVal s1) `compare` (IntVal s2) = s1 `compare` s2
@@ -65,41 +65,41 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
   data Program = Program String [Statement]
                     deriving (Show, Eq)
 
-  instance Show Operator where
-    show (OpAnd) = "&&"
-    show (OpNot) = "!"
-    show (OpNotEq) = "!="
-    show (OpOr) = "||"
-    show (OpCompLt) = "<"
-    show (OpCompGt) = ">"
-    show (OpCompGte) = ">="
-    show (OpCompLte) = "<="
-    show (OpEq) = "=="
-    show (OpMin) = "-"
-    show (OpDiv) = "/"
-    show (OpAdd) = "+"
-    show (OpMult) = "*"
+--  instance Show Operator where
+--    show (OpAnd) = "&&"
+--    show (OpNot) = "!"
+--    show (OpNotEq) = "!="
+--    show (OpOr) = "||"
+--    show (OpCompLt) = "<"
+--    show (OpCompGt) = ">"
+--    show (OpCompGte) = ">="
+--    show (OpCompLte) = "<="
+--    show (OpEq) = "=="
+--    show (OpMin) = "-"
+--    show (OpDiv) = "/"
+--    show (OpAdd) = "+"
+--    show (OpMult) = "*"
 
-  instance Show Expression where
-    show (VarExp n) = n
-    show (TermExp n args) = (n ++ "(" ++ ((fmap (\v -> ((show v) ++ ",")) args) >>= id) ++ ")")
-    show (ClosureExpr n args body) = (n ++ "(" ++ ((fmap show args) >>= id) ++ ") :- " ++ (show body))
-    show CutOperatorExp = "!"
-    show (CutExp exp) = "!(" ++ (show exp) ++ ")"
-    show (LiteralExp v) = (show v)
-    show (ListExp (EnumeratedList xs)) = show xs
-    show (ListExp (ConsList head tail)) = ("[" ++ (show head ) ++ " | " ++ (show tail) ++ "]")
-    show (UnaryExpression op exp) = (show op) ++ (show exp)
-    show (BinaryExpression op left right) = (show left) ++ " " ++ (show op) ++ " " ++ (show right)
-    show (ExceptionExpression e) = "exception " ++ (show e)
+--  instance Show Expression where
+--    show (VarExp n) = n
+--    show (TermExp n args) = (n ++ "(" ++ ((fmap (\v -> ((show v) ++ ",")) args) >>= id) ++ ")")
+--    show (ClosureExpr n args body) = (n ++ "(" ++ ((fmap show args) >>= id) ++ ") :- " ++ (show body))
+--    show CutOperatorExp = "!"
+--    show (CutExp exp) = "!(" ++ (show exp) ++ ")"
+--    show (LiteralExp v) = (show v)
+--    show (ListExp (EnumeratedList xs)) = show xs
+--    show (ListExp (ConsList head tail)) = ("[" ++ (show head ) ++ " | " ++ (show tail) ++ "]")
+--    show (UnaryExpression op exp) = (show op) ++ (show exp)
+--    show (BinaryExpression op left right) = (show left) ++ " " ++ (show op) ++ " " ++ (show right)
+--    show (ExceptionExpression e) = "exception " ++ (show e)
 
   instance Ord Expression where
       compare l r = compare (show l) (show r)
 
-  instance Show Val where
-    show (BoolVal v) = show v
-    show (IntVal v) = show v
-    show (StringVal v) = v
+--  instance Show Val where
+--    show (BoolVal v) = show v
+--    show (IntVal v) = show v
+--    show (StringVal v) = v
 
   isCompOp :: Operator -> Bool
   isCompOp op
@@ -142,6 +142,7 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
   listVariables (ListExp EmptyList) = []
   listVariables (ListExp (EnumeratedList xs)) = foldl (++) [] (fmap (\v -> listVariables v) xs)
   listVariables (ListExp (ConsList head tail)) = (listVariables head) ++ (listVariables tail)
+
   listVariables (TermExp _ args) = foldl (++) [] (fmap (\v -> listVariables v) args)
 
   getOrElse::Maybe a -> a -> a

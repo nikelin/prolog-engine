@@ -35,6 +35,8 @@ library
   build-depends:
       base >=4.7 && <5
     , containers ==0.6.*
+    , hspec
+    , hspec-contrib
     , megaparsec
     , text
     , unordered-containers >=0.2
@@ -50,6 +52,8 @@ executable prolog-engine-exe
   build-depends:
       base >=4.7 && <5
     , containers ==0.6.*
+    , hspec
+    , hspec-contrib
     , megaparsec
     , prolog-engine
     , text
@@ -67,6 +71,8 @@ test-suite prolog-engine-test
   build-depends:
       base >=4.7 && <5
     , containers ==0.6.*
+    , hspec
+    , hspec-contrib
     , megaparsec
     , prolog-engine
     , text
