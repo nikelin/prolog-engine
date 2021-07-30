@@ -43,7 +43,7 @@ executables:
     - prolog-engine
 
 tests:
-  prolog-engine-test:
+  parsing-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
