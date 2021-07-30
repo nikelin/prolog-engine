@@ -39,6 +39,33 @@ main = hspec $ do
   describe "Unification" $ do
 
     describe "term unifications" $ do
+      it "unify(term(enumerated list)) with const list expr" $ do
+        let termsEnv = H.fromListWith (++) [
+              -- first term: a(1)
+              ("a/1", [TermExp "a" [(ListExp (EnumeratedList [LiteralExp (IntVal 1), LiteralExp (IntVal 2), LiteralExp (IntVal 3)]))]])
+              -- second term: a(a)
+              , ("a/1", [TermExp "a" [(LiteralExp (AtomVal "a"))]])
+               ]
+        let expression = (TermExp "a" [ListExp (ConsList (VarExp "H") (VarExp "L"))])
+        let expectedSolutions = [
+              S.fromList [("X", (LiteralExp (IntVal 1)))]
+              , S.fromList [("X", (LiteralExp (AtomVal "a")))]
+              ]
+        (unify termsEnv S.empty expression) `shouldBe` (True, expectedSolutions)
+
+      it "unify(term(enumerated list)) with enumerated list expr" $ do
+        let termsEnv = H.fromListWith (++) [
+              -- first term: a(1)
+              ("a/1", [TermExp "a" [(ListExp (EnumeratedList [LiteralExp (IntVal 1), LiteralExp (IntVal 2), LiteralExp (IntVal 3)]))]])
+              -- second term: a(a)
+              , ("a/1", [TermExp "a" [(LiteralExp (AtomVal "a"))]])
+               ]
+        let expression = (TermExp "a" [ListExp (EnumeratedList [(VarExp "H"), (VarExp "L"), (VarExp "D")])])
+        let expectedSolutions = [
+              S.fromList [("X", (LiteralExp (IntVal 1)))]
+              , S.fromList [("X", (LiteralExp (AtomVal "a")))]
+              ]
+        (unify termsEnv S.empty expression) `shouldBe` (True, expectedSolutions)
 
       it "unify(term(literal))" $ do
         let termsEnv = H.fromListWith (++) [
@@ -123,7 +150,12 @@ main = hspec $ do
               ) facts)
         results `shouldBe` (take 100 (repeat True))
 
-      it "multiple facts (with body)" $ do
+      it "a rule with a cut operator" $ do
+        let fact = RuleStmt "fact" [VarExp "A"] (Just (BinaryExpression OpAnd (CutExp (TermExp "test" [VarExp "A"])) (LiteralExp (BoolVal True))))
+        let result = (M.runParser (program "test") "" "fact(A) :- test(A), !.")
+        result `shouldBe` (Right (Right (Program "test" [fact])))
+
+      it "multiple rules" $ do
         let facts = (take 100 (repeat ("factC(X, A, D) :- X > A, A > D, fact(D).",
               RuleStmt "factC" [VarExp "X", VarExp "A", VarExp "D"] (Just
                 (BinaryExpression OpAnd
