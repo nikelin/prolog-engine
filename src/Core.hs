@@ -15,6 +15,8 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
             Program(Program),
             isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
 
+  import qualified Data.Set as S 
+  
   data Val = AtomVal String |
              IntVal Int |
              FloatVal Float |
@@ -130,20 +132,20 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
     | op == OpCompGt = (LiteralExp (BoolVal (left > right)))
     | op == OpCompLt = (LiteralExp (BoolVal (left < right)))
 
-  listVariables :: Expression -> [String]
-  listVariables (LiteralExp _) = []
+  listVariables :: Expression -> S.Set String
+  listVariables (LiteralExp _) = S.empty
   listVariables (CutExp exp) = listVariables exp
-  listVariables (ExceptionExpression _) = []
-  listVariables CutOperatorExp = []
-  listVariables (ClosureExpr _ _ _) = []
-  listVariables (VarExp n) = [n]
+  listVariables (ExceptionExpression _) = S.empty
+  listVariables CutOperatorExp = S.empty
+  listVariables (ClosureExpr _ _ _) = S.empty
+  listVariables (VarExp n) = S.singleton n
   listVariables (UnaryExpression _ left) = (listVariables left)
-  listVariables (BinaryExpression _ left right) = (listVariables left) ++ (listVariables right)
-  listVariables (ListExp EmptyList) = []
-  listVariables (ListExp (EnumeratedList xs)) = foldl (++) [] (fmap (\v -> listVariables v) xs)
-  listVariables (ListExp (ConsList head tail)) = (listVariables head) ++ (listVariables tail)
+  listVariables (BinaryExpression _ left right) = S.union (listVariables left) (listVariables right)
+  listVariables (ListExp EmptyList) = S.empty
+  listVariables (ListExp (EnumeratedList xs)) = foldl (S.union) S.empty (map (\v -> listVariables v) xs)
+  listVariables (ListExp (ConsList head tail)) = S.union (listVariables head) (listVariables tail)
 
-  listVariables (TermExp _ args) = foldl (++) [] (fmap (\v -> listVariables v) args)
+  listVariables (TermExp _ args) = foldl (S.union) S.empty (fmap (\v -> listVariables v) args)
 
   getOrElse::Maybe a -> a -> a
   getOrElse (Just v) d = v
