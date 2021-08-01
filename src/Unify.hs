@@ -191,10 +191,10 @@ module Unify(solve, processInstructions, unify, eval) where
                       (filter(\v -> (not (S.null v))) rsubst) ++ lsols))
                   (False, _) ->
                     (if lu then lu else False, lsols))
-              )) (True, []) (fmap (\term ->
-                let
-                  result = (unify'' False env subst term expr)
-                in result) v))
+              )) (True, []) (reverse (foldl (\l -> (\term ->
+                if (length l) > 0 && incut then l
+                else ((unify'' False env subst term expr):l)
+              )) [] v)))
             in
               solutions
         Nothing ->
@@ -306,6 +306,8 @@ module Unify(solve, processInstructions, unify, eval) where
             ))
         in resultTerms) evaluatedArgs
     in merged
+
+  eval parentScope termEnv subst (CutExp exp) = eval parentScope termEnv subst exp
 
   eval _ _ _ unexpected =
     trace ("Unexpected input to the eval(x, y): " ++ (show unexpected)) (Left (UnexpectedExpression unexpected))
