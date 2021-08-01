@@ -13,10 +13,11 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
             Expression(ExceptionExpression, VarExp, TermExp, LiteralExp, CutOperatorExp, CutExp, ClosureExpr, ListExp, UnaryExpression, BinaryExpression),
             Statement(RuleStmt, ConsultStmt),
             Program(Program),
-            isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
+            unaryArithOp, unaryLogicalOp, isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
 
-  import qualified Data.Set as S 
-  
+  import Debug.Trace
+  import qualified Data.Set as S
+
   data Val = AtomVal String |
              IntVal Int |
              FloatVal Float |
@@ -123,13 +124,20 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
   binaryLogicalOp op le @ (LiteralExp (BoolVal left)) re @ (LiteralExp (BoolVal right))
     | op == OpAnd = (LiteralExp (BoolVal (left && right)))
     | op == OpOr = (LiteralExp (BoolVal (left || right)))
+
+  unaryArithOp op exp @ (LiteralExp (IntVal val))
+    | op == OpMin = (LiteralExp (IntVal (-1 * val)))
+
+  unaryLogicalOp op exp @ (LiteralExp (BoolVal value))
+    | op == OpNot = (LiteralExp (BoolVal (not value)))
+
   compareOp :: Operator -> Expression -> Expression -> Expression
   compareOp op le @ (LiteralExp left) re @ (LiteralExp right)
     | op == OpEq = (LiteralExp (BoolVal (left == right)))
     | op == OpNotEq = (LiteralExp (BoolVal (left /= right)))
     | op == OpCompLte = (LiteralExp (BoolVal (left <= right)))
     | op == OpCompGte = (LiteralExp (BoolVal (left >= right)))
-    | op == OpCompGt = (LiteralExp (BoolVal (left > right)))
+    | op == OpCompGt = (LiteralExp (BoolVal (trace ("Left " ++ (show left) ++ "; right=" ++ (show right)) (left > right))))
     | op == OpCompLt = (LiteralExp (BoolVal (left < right)))
 
   listVariables :: Expression -> S.Set String
