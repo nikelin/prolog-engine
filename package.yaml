@@ -27,6 +27,7 @@ dependencies:
 - hspec
 - hspec-contrib
 - text
+- semialign
 
 library:
   source-dirs: src

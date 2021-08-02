@@ -37,38 +37,19 @@ ndetake n xs = go (length xs) n xs
 main :: IO ()
 main = hspec $ do
   describe "Complex rules" $ do
-      it "ancestry example with three terms: parent, sibling, has_children" $ do
-        let termsEnv = H.fromListWith (++) [
-              ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "josh"))]])
-                , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "michael"))]])
-                , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "clarisa"))]])
-                , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "michael")), (LiteralExp (AtomVal "brian"))]])
-                , ("has_children/1", [ClosureExpr "has_children" [VarExp "P"] (TermExp "parent" [VarExp "P", VarExp "C"])])
-                , ("siblings/2", [ClosureExpr "siblings" [VarExp "P", VarExp "S"] (BinaryExpression OpAnd
-                     (TermExp "parent" [VarExp "Y", VarExp "P"])
-                     (BinaryExpression OpAnd
-                        (CutExp (TermExp "parent" [VarExp "Y", VarExp "S"]))
-                        (BinaryExpression OpNotEq
-                          (VarExp "P")
-                          (VarExp "S"))
-                   ))])
-               ]
-        let expression = (TermExp "siblings" [LiteralExp (AtomVal "michael"), (VarExp "S")])
-        let expectedSolutions = [
-              S.fromList [("S", (LiteralExp (AtomVal "josh")))]
-              ]
-        (unify termsEnv S.empty expression) `shouldBe` (True, expectedSolutions)
-
-      it "ancestry example with three terms: parent, sibling, has_children" $ do
+      it "(1 - simple case) ancestry example with three terms: parent, sibling, has_children" $ do
         let termsEnv = H.fromListWith (++) [
               ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "josh"))]])
               , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "michael"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "clarisa"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "sarah"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "jessicah"))]])
               , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "michael")), (LiteralExp (AtomVal "brian"))]])
               , ("has_children/1", [ClosureExpr "has_children" [VarExp "P"] (TermExp "parent" [VarExp "P", VarExp "C"])])
               , ("siblings/2", [ClosureExpr "siblings" [VarExp "P", VarExp "S"] (BinaryExpression OpAnd
-                   (TermExp "parent" [VarExp "Y", VarExp "P"])
+                   (TermExp "parent" [VarExp "Y", VarExp "P"]) -- dim(Y) == 1
                    (BinaryExpression OpAnd
-                      (TermExp "parent" [VarExp "Y", VarExp "S"])
+                      (TermExp "parent" [VarExp "Y", VarExp "S"]) -- dim(Y) == 1 but dim(S) == 5
                       (BinaryExpression OpNotEq
                         (VarExp "P")
                         (VarExp "S"))
@@ -76,101 +57,116 @@ main = hspec $ do
                ]
         let expression = (TermExp "siblings" [LiteralExp (AtomVal "michael"), (VarExp "S")])
         let expectedSolutions = [
-              S.fromList [("S", (LiteralExp (AtomVal "josh")))]
+              [("S", (LiteralExp (AtomVal "josh")))]
+              , [("S", (LiteralExp (AtomVal "clarisa")))]
+              , [("S", (LiteralExp (AtomVal "sarah")))]
+              , [("S", (LiteralExp (AtomVal "jessicah")))]
               ]
-        (unify termsEnv S.empty expression) `shouldBe` (True, expectedSolutions)
+        (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
+
+      it "(2 - cut operator case) if expression ambiguous branches" $ do
+        let termsEnv = H.fromListWith (++) [
+              ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 5))]])
+              , ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 15))]])
+              , ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 20))]])
+              , ("find_y/2", [ClosureExpr "find_y" [VarExp "X", VarExp "Y"] (BinaryExpression OpAnd
+                      (CutExp (TermExp "xy" [VarExp "X", VarExp "Y"]))
+                      (BinaryExpression
+                        OpCompGt
+                        (VarExp "Y") (LiteralExp (NumVal 5))))
+                 ])
+               ]
+        let expression = (TermExp "find_y" [LiteralExp (NumVal 5), VarExp "Y"])
+        let expectedSolutions = [
+              [("Y", (LiteralExp (NumVal 20)))]
+              ]
+        (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
 
   describe "Unification" $ do
-
     describe "term unifications" $ do
       it "unify(term(enumerated list)) with const list expr" $ do
         let termsEnv = H.fromListWith (++) [
-              ("a/1", [TermExp "a" [(ListExp (EnumeratedList [LiteralExp (IntVal 1), LiteralExp (IntVal 2), LiteralExp (IntVal 3)]))]])
+              ("a/1", [TermExp "a" [(ListExp (EnumeratedList [LiteralExp (NumVal 1), LiteralExp (NumVal 2), LiteralExp (NumVal 3)]))]])
               , ("a/1", [TermExp "a" [(LiteralExp (AtomVal "a"))]])
                ]
         let expression = (TermExp "a" [ListExp (ConsList (VarExp "H") (VarExp "L"))])
         let expectedSolutions = [
-              S.fromList [("X", (LiteralExp (IntVal 1)))]
-              , S.fromList [("X", (LiteralExp (AtomVal "a")))]
+              [("L", (ListExp (EnumeratedList [(LiteralExp (NumVal 2)), (LiteralExp (NumVal 3))]))), ("H", (LiteralExp (NumVal 1)))]
               ]
-        (unify termsEnv S.empty expression) `shouldBe` (True, expectedSolutions)
+        (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
 
       it "unify(term(enumerated list)) with enumerated list expr" $ do
         let termsEnv = H.fromListWith (++) [
-              -- first term: a(1)
-              ("a/1", [TermExp "a" [(ListExp (EnumeratedList [LiteralExp (IntVal 1), LiteralExp (IntVal 2), LiteralExp (IntVal 3)]))]])
-              -- second term: a(a)
-              , ("a/1", [TermExp "a" [(LiteralExp (AtomVal "a"))]])
-               ]
+              ("a/1", [TermExp "a" [(ListExp (EnumeratedList [LiteralExp (NumVal 1), LiteralExp (NumVal 2), LiteralExp (NumVal 3)]))]])
+             ]
         let expression = (TermExp "a" [ListExp (EnumeratedList [(VarExp "H"), (VarExp "L"), (VarExp "D")])])
         let expectedSolutions = [
-              S.fromList [("X", (LiteralExp (IntVal 1)))]
-              , S.fromList [("X", (LiteralExp (AtomVal "a")))]
+              [("H", (LiteralExp (NumVal 1))), ("L", (LiteralExp (NumVal 2))), ("D", (LiteralExp (NumVal 3)))]
               ]
-        (unify termsEnv S.empty expression) `shouldBe` (True, expectedSolutions)
+        (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
 
       it "unify(term(literal))" $ do
         let termsEnv = H.fromListWith (++) [
               -- first term: a(1)
-              ("a/1", [TermExp "a" [(LiteralExp (IntVal 1))]])
+              ("a/1", [TermExp "a" [(LiteralExp (NumVal 1))]])
               -- second term: a(a)
               , ("a/1", [TermExp "a" [(LiteralExp (AtomVal "a"))]])
                ]
         let expression = (TermExp "a" [VarExp "X"])
         let expectedSolutions = [
-              S.fromList [("X", (LiteralExp (IntVal 1)))]
-              , S.fromList [("X", (LiteralExp (AtomVal "a")))]
+              [("X", (LiteralExp (NumVal 1)))]
+              , [("X", (LiteralExp (AtomVal "a")))]
               ]
-        (unify termsEnv S.empty expression) `shouldBe` (True, expectedSolutions)
+        (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
 
       it "unify(rule) non-recursive, positive, no subst" $ do
         let termsEnv = H.fromListWith (++) [
               -- first term: check-a(X) :- X > 7.
-              ("check-a/1", [ClosureExpr "check-a" [VarExp "X"] (BinaryExpression OpCompGt (VarExp "X") (LiteralExp (IntVal 7)))])
+              ("check-a/1", [ClosureExpr "check-a" [VarExp "X"] (BinaryExpression OpCompGt (VarExp "X") (LiteralExp (NumVal 7)))])
               -- second term: check-a(X, Y) :- X > Y.
               , ("check-a/2", [ClosureExpr "check-a" [VarExp "X", VarExp "Y"] (BinaryExpression OpCompGt (VarExp "X") (VarExp "Y"))])
                ]
-        let expression = (TermExp "check-a" [LiteralExp (IntVal 12)])
-        (unify termsEnv S.empty expression) `shouldBe` (True, [])
+        let expression = (TermExp "check-a" [LiteralExp (NumVal 12)])
+        (unify termsEnv [] expression) `shouldBe` (True, [])
 
       it "unify(rule) non-recursive, negative" $ do
         let termsEnv = H.fromListWith (++) [
               -- first term: check-a(X) :- X > 7.
-              ("check-a/1", [ClosureExpr "check-a" [VarExp "X"] (BinaryExpression OpCompGt (VarExp "X") (LiteralExp (IntVal 7)))])
+              ("check-a/1", [ClosureExpr "check-a" [VarExp "X"] (BinaryExpression OpCompGt (VarExp "X") (LiteralExp (NumVal 7)))])
               -- second term: check-a(X, Y) :- X > Y.
               , ("check-a/2", [ClosureExpr "check-a" [VarExp "X", VarExp "Y"] (BinaryExpression OpCompGt (VarExp "X") (VarExp "Y"))])
                ]
-        let expression = (TermExp "check-a" [LiteralExp (IntVal 6)])
-        (unify termsEnv S.empty expression) `shouldBe` (True, [])
+        let expression = (TermExp "check-a" [LiteralExp (NumVal 6)])
+        (unify termsEnv [] expression) `shouldBe` (True, [])
 
       it "unify(binary expression, rule) recursive, positive, with subst" $ do
         let termsEnv = H.fromListWith (++) [
               -- first term: check-a(X) :- X > 7.
               ("check-a/1", [ClosureExpr "check-a" [VarExp "X"] (BinaryExpression OpAnd (TermExp "check-a" [VarExp "X", VarExp "Y"])
-                  (BinaryExpression OpCompGt (VarExp "Y") (LiteralExp (IntVal 7))))])
+                  (BinaryExpression OpCompGt (VarExp "Y") (LiteralExp (NumVal 7))))])
               -- second term: check-a(X, Y) :- X > Y.
-              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 10), LiteralExp (IntVal 10)]])
-              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 9), LiteralExp (IntVal 9)]])
-              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 8), LiteralExp (IntVal 8)]])
-              , ("check-a/2", [TermExp "check-a" [LiteralExp (IntVal 7), LiteralExp (IntVal 6)]])
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (NumVal 10), LiteralExp (NumVal 10)]])
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (NumVal 9), LiteralExp (NumVal 9)]])
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (NumVal 8), LiteralExp (NumVal 8)]])
+              , ("check-a/2", [TermExp "check-a" [LiteralExp (NumVal 7), LiteralExp (NumVal 6)]])
                ]
         let expression = (TermExp "check-a" [VarExp "X"])
-        let solutions = (unify termsEnv S.empty expression)
+        let solutions = (unify termsEnv [] expression)
         solutions `shouldBe` (True, [
-          S.fromList [("X", (LiteralExp (IntVal 10)))]
-          , S.fromList [("X", (LiteralExp (IntVal 9)))]
-          , S.fromList [("X", (LiteralExp (IntVal 8)))]
+          [("X", (LiteralExp (NumVal 10)))]
+          , [("X", (LiteralExp (NumVal 9)))]
+          , [("X", (LiteralExp (NumVal 8)))]
           ])
       it "unify(unary expression, rule) recursive, positive, with subst" $ do
         let termsEnv = H.fromListWith (++) [
               -- first term: check-a(X) :- X > 7.
               ("check-a/1", [ClosureExpr "check-a" [VarExp "X"] (BinaryExpression OpCompGt
                 (UnaryExpression OpMin (VarExp "X"))
-                (LiteralExp (IntVal 5)))])
+                (LiteralExp (NumVal 5)))])
                ]
-        let expressions = fmap (\counter -> (((-counter) > 5), (TermExp "check-a" [LiteralExp (IntVal counter)]))) (fmap (\x -> -1 * x) [0..9])
+        let expressions = fmap (\counter -> (((-counter) > 5), (TermExp "check-a" [LiteralExp (NumVal counter)]))) (fmap (\x -> -1 * x) [0..9])
         let solutions = fmap (\(expected, exp) ->
-              case (unify termsEnv S.empty exp) of
+              case (unify termsEnv [] exp) of
                 (actualVal, _) -> actualVal == expected) expressions
         solutions `shouldBe` (take 6 (repeat False)) ++ (take 4 (repeat True))
 
@@ -184,7 +180,7 @@ main = hspec $ do
             , (RuleStmt "fact" [LiteralExp (AtomVal "b")] Nothing)
             , (RuleStmt "fact" [LiteralExp (AtomVal "c")] Nothing)
             , (RuleStmt "factB" [VarExp "C", VarExp "A"] Nothing)
-            , (RuleStmt "factD" [VarExp "C"] (Just (BinaryExpression OpAnd (BinaryExpression OpCompGt (VarExp "C") (LiteralExp (IntVal 1))) (LiteralExp (BoolVal True)))))
+            , (RuleStmt "factD" [VarExp "C"] (Just (BinaryExpression OpAnd (BinaryExpression OpCompGt (VarExp "C") (LiteralExp (NumVal 1))) (LiteralExp (BoolVal True)))))
           ])
 
     describe "statements parsing" $ do
@@ -195,7 +191,7 @@ main = hspec $ do
         M.runParser (program "test") "" "consult('resources/test01.prolog')." `shouldBe` (Right (Right (Program "test" [ConsultStmt "resources/test01.prolog"])))
 
       it "multiple facts (no body)" $ do
-        let facts = (take 100 (repeat ("factC(1, a, d).", RuleStmt "factC" [(LiteralExp (IntVal 1)), (LiteralExp (AtomVal "a")), (LiteralExp (AtomVal "d"))] Nothing)))
+        let facts = (take 100 (repeat ("factC(1, a, d).", RuleStmt "factC" [(LiteralExp (NumVal 1)), (LiteralExp (AtomVal "a")), (LiteralExp (AtomVal "d"))] Nothing)))
         let results = (fmap (\fact ->
                 case (M.runParser (program "test") "" (fst fact)) of
                   (Right (Right (Program _ stms))) ->
@@ -233,12 +229,15 @@ main = hspec $ do
         results `shouldBe` (take 100 (repeat True))
 
     describe "expressions parsing" $ do
+      it "an integer (unsigned)" $ do
+        M.runParser (expression) "" "4242" `shouldBe` (Right (Right (LiteralExp (NumVal 4242))))
+
       it "a parameterised term expression (1)" $ do
         M.runParser (expression) "" "factC(A)." `shouldBe` (Right (Right (TermExp "factC" [VarExp "A"])))
 
       it "a parameterised term expression: var + enum list" $ do
         M.runParser (expression) "" "factC(A, [1, True, 'test'])." `shouldBe` (Right (Right (TermExp "factC" [VarExp "A",
-             (ListExp (EnumeratedList [(LiteralExp (IntVal 1)), (LiteralExp (BoolVal True)), (LiteralExp (StringVal "test"))]))])))
+             (ListExp (EnumeratedList [(LiteralExp (NumVal 1)), (LiteralExp (BoolVal True)), (LiteralExp (StringVal "test"))]))])))
 
       it "a parameterised term expression: unary expression" $ do
         M.runParser (expression) "" "factC(not A)." `shouldBe` (Right (Right (TermExp "factC" [(UnaryExpression OpNot (VarExp "A"))])))
@@ -253,15 +252,15 @@ main = hspec $ do
         M.runParser (expression) "" "A and fact(C)" `shouldBe` (Right (Right (BinaryExpression OpAnd (VarExp "A") (TermExp "fact" [VarExp "C"]))))
 
       it "a binary expression (simple) - var and literal" $ do
-        M.runParser (expression) "" "A and 1" `shouldBe` (Right (Right (BinaryExpression OpAnd (VarExp "A") (LiteralExp (IntVal 1)))))
+        M.runParser (expression) "" "A and 1" `shouldBe` (Right (Right (BinaryExpression OpAnd (VarExp "A") (LiteralExp (NumVal 1)))))
 
       it "a binary expression (simple) - literal and literal" $ do
-        M.runParser (expression) "" "25 and False" `shouldBe` (Right (Right (BinaryExpression OpAnd (LiteralExp (IntVal 25)) (LiteralExp (BoolVal False)))))
+        M.runParser (expression) "" "25 and False" `shouldBe` (Right (Right (BinaryExpression OpAnd (LiteralExp (NumVal 25)) (LiteralExp (BoolVal False)))))
 
       it "a binary expression (simple) [all operators]" $ do
         let ops = [("not", OpNot), ("-", OpMin)]
         let operands = [("A", VarExp "A")
-                          , ("2", LiteralExp (IntVal 2))
+                          , ("2", LiteralExp (NumVal 2))
                           , ("False", (LiteralExp (BoolVal False)))
                           , ("True", (LiteralExp (BoolVal True)))
                           , ("name()", (TermExp "name" []))

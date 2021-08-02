@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
+module Core (Val(AtomVal, NumVal, StringVal, BoolVal),
             Identifier,
             Operator(OpAdd, OpMin, OpMult, OpDiv, OpAnd, OpOr, OpCompLt, OpCompLte, OpCompGt, OpCompGte, OpEq, OpNotEq, OpNot),
             List(ConsList, EnumeratedList, EmptyList),
@@ -13,22 +13,21 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
             Expression(ExceptionExpression, VarExp, TermExp, LiteralExp, CutOperatorExp, CutExp, ClosureExpr, ListExp, UnaryExpression, BinaryExpression),
             Statement(RuleStmt, ConsultStmt),
             Program(Program),
-            unaryArithOp, unaryLogicalOp, isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
+            unaryArithOp, unaryLogicalOp, isBinaryArithOp, binaryArithOp, isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
 
   import Debug.Trace
   import qualified Data.Set as S
 
   data Val = AtomVal String |
-             IntVal Int |
-             FloatVal Float |
+             NumVal Int |
              StringVal String |
              BoolVal Bool
-             deriving (Show, Eq)
+             deriving (Eq)
 
   type Identifier = String
 
   data Operator = OpAdd | OpMin | OpMult | OpDiv | OpAnd | OpOr | OpCompLt | OpCompLte | OpCompGt | OpCompGte |
-                  OpEq | OpNotEq | OpNot deriving (Show, Eq)
+                  OpEq | OpNotEq | OpNot deriving (Eq)
 
   data List = ConsList Expression Expression |
               EnumeratedList [Expression] |
@@ -52,11 +51,10 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
                     UnaryExpression Operator Expression |
                     BinaryExpression Operator Expression Expression |
                     ExceptionExpression Exception
-                    deriving (Show, Eq)
+                    deriving (Eq)
 
   instance Ord Val where
-      (IntVal s1) `compare` (IntVal s2) = s1 `compare` s2
-      (FloatVal s1) `compare` (FloatVal s2) = s1 `compare` s2
+      (NumVal s1) `compare` (NumVal s2) = s1 `compare` s2
       (BoolVal s1) `compare` (BoolVal s2) = s1 `compare` s2
       (StringVal s1) `compare` (StringVal s2) = s1 `compare` s2
       (AtomVal _) `compare` (AtomVal _) = GT
@@ -68,41 +66,42 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
   data Program = Program String [Statement]
                     deriving (Show, Eq)
 
---  instance Show Operator where
---    show (OpAnd) = "&&"
---    show (OpNot) = "!"
---    show (OpNotEq) = "!="
---    show (OpOr) = "||"
---    show (OpCompLt) = "<"
---    show (OpCompGt) = ">"
---    show (OpCompGte) = ">="
---    show (OpCompLte) = "<="
---    show (OpEq) = "=="
---    show (OpMin) = "-"
---    show (OpDiv) = "/"
---    show (OpAdd) = "+"
---    show (OpMult) = "*"
+  instance Show Operator where
+    show (OpAnd) = "&&"
+    show (OpNot) = "!"
+    show (OpNotEq) = "!="
+    show (OpOr) = "||"
+    show (OpCompLt) = "<"
+    show (OpCompGt) = ">"
+    show (OpCompGte) = ">="
+    show (OpCompLte) = "<="
+    show (OpEq) = "=="
+    show (OpMin) = "-"
+    show (OpDiv) = "/"
+    show (OpAdd) = "+"
+    show (OpMult) = "*"
 
---  instance Show Expression where
---    show (VarExp n) = n
---    show (TermExp n args) = (n ++ "(" ++ ((fmap (\v -> ((show v) ++ ",")) args) >>= id) ++ ")")
---    show (ClosureExpr n args body) = (n ++ "(" ++ ((fmap show args) >>= id) ++ ") :- " ++ (show body))
---    show CutOperatorExp = "!"
---    show (CutExp exp) = "!(" ++ (show exp) ++ ")"
---    show (LiteralExp v) = (show v)
---    show (ListExp (EnumeratedList xs)) = show xs
---    show (ListExp (ConsList head tail)) = ("[" ++ (show head ) ++ " | " ++ (show tail) ++ "]")
---    show (UnaryExpression op exp) = (show op) ++ (show exp)
---    show (BinaryExpression op left right) = (show left) ++ " " ++ (show op) ++ " " ++ (show right)
---    show (ExceptionExpression e) = "exception " ++ (show e)
+  instance Show Expression where
+    show (VarExp n) = n
+    show (TermExp n args) = (n ++ "(" ++ ((fmap (\v -> ((show v) ++ ",")) args) >>= id) ++ ")")
+    show (ClosureExpr n args body) = (n ++ "(" ++ ((fmap show args) >>= id) ++ ") :- " ++ (show body))
+    show CutOperatorExp = "!"
+    show (CutExp exp) = "!(" ++ (show exp) ++ ")"
+    show (LiteralExp v) = (show v)
+    show (ListExp (EnumeratedList xs)) = show xs
+    show (ListExp (ConsList head tail)) = ("[" ++ (show head ) ++ " | " ++ (show tail) ++ "]")
+    show (UnaryExpression op exp) = (show op) ++ (show exp)
+    show (BinaryExpression op left right) = (show left) ++ " " ++ (show op) ++ " " ++ (show right)
+    show (ExceptionExpression e) = "exception " ++ (show e)
 
   instance Ord Expression where
       compare l r = compare (show l) (show r)
 
---  instance Show Val where
---    show (BoolVal v) = show v
---    show (IntVal v) = show v
---    show (StringVal v) = v
+  instance Show Val where
+    show (BoolVal v) = show v
+    show (NumVal v) = show v
+    show (StringVal v) = v
+    show (AtomVal v) = v
 
   isCompOp :: Operator -> Bool
   isCompOp op
@@ -120,13 +119,41 @@ module Core (Val(AtomVal, IntVal, FloatVal, StringVal, BoolVal),
     | op == OpOr = True
     | otherwise = False
 
-  binaryLogicalOp :: Operator -> Expression -> Expression -> Expression
-  binaryLogicalOp op le @ (LiteralExp (BoolVal left)) re @ (LiteralExp (BoolVal right))
-    | op == OpAnd = (LiteralExp (BoolVal (left && right)))
-    | op == OpOr = (LiteralExp (BoolVal (left || right)))
+  isBinaryArithOp :: Operator -> Bool
+  isBinaryArithOp op
+    | op == OpAdd = True
+    | op == OpMin = True
+    | op == OpMult = True
+    | op == OpDiv = True
+    | otherwise = False
 
-  unaryArithOp op exp @ (LiteralExp (IntVal val))
-    | op == OpMin = (LiteralExp (IntVal (-1 * val)))
+  binaryArithOp :: Operator -> Expression -> Expression -> Expression
+  binaryArithOp op (LiteralExp (NumVal left)) (LiteralExp (NumVal right))
+    | op == OpAdd = (LiteralExp (NumVal (left + right)))
+    | op == OpMin = (LiteralExp (NumVal (left - right)))
+    | op == OpMult = (LiteralExp (NumVal (left * right)))
+    | op == OpDiv = (LiteralExp (NumVal (left `div` right)))
+
+  isTruthy :: Expression -> Bool
+  isTruthy (LiteralExp (AtomVal _)) = True
+  isTruthy (LiteralExp (NumVal v)) = v /= 0
+  isTruthy (LiteralExp (BoolVal v)) = v
+  isTruthy (LiteralExp (StringVal v)) = (length v) > 0
+  isTruthy (ListExp (EnumeratedList lst)) = (length lst) > 0
+  isTruthy _ = False
+
+  binaryLogicalOp :: Operator -> Expression -> Expression -> Expression
+  binaryLogicalOp op le @ (LiteralExp _) re @ (LiteralExp _) =
+    let
+      left = (isTruthy le)
+      right = (isTruthy re)
+    in
+      case op of
+        OpAnd -> (LiteralExp (BoolVal (left && right)))
+        OpOr -> (LiteralExp (BoolVal (left || right)))
+
+  unaryArithOp op exp @ (LiteralExp (NumVal val))
+    | op == OpMin = (LiteralExp (NumVal (-1 * val)))
 
   unaryLogicalOp op exp @ (LiteralExp (BoolVal value))
     | op == OpNot = (LiteralExp (BoolVal (not value)))

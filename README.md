@@ -28,7 +28,7 @@ Its main features are:
   - Cons-lists (i.e. `[Head|Tail]`)
   - Enumerated lists (i.e. `[1, 2, 3, 4, 5]`) 
   - Boolean 
-  - Numeric types: `Int`, `Float`
+  - Numeric types: `Int`
   - Strings
 
 The language allows following operations over its data types:
@@ -36,8 +36,8 @@ The language allows following operations over its data types:
   - Logical negation: `(!) :: Bool -> Bool`
   - Arithmetic negation: `(-) :: Int -> Int`
 - Binary operations
-  - Logical conjunction: `(and) :: Bool -> Bool -> Bool`
-  - Logical disjunction: `(or) :: Bool -> Bool -> Bool`
+  - Logical conjunction: `(and) :: Truthy -> Truthy -> Bool`
+  - Logical disjunction: `(or) :: Truthy -> Truthy -> Bool`
   - Comparison operations:
     - `(>) :: Ord a -> a -> a -> Bool`
     - `(<) :: Ord a -> a -> a -> Bool`
@@ -52,23 +52,86 @@ The language allows following operations over its data types:
 
 ## Implementation
 
-The implementation of a syntax parser is based on capabilities provided by `megaparsec` library, language's AST consists
-of three structural parts:
-- Statements: `RuleStm` for high level definitions which is used for both rules and facts (a missing body part).
-- Expressions: 
-  - `(UnaryExpression op exp)` - a representation for an operation **op** of a single argument **exp**.
-  - `(BinaryExpression op left right)` - a representation of an operation **op** of two arguments **left** and **right**.
-  - `(TermExp name [Expression])` - a reference to a term **name** and a list of argument values. 
-  - `CutExp` - denotes a cut operator `!`
-  - `CutOperationExp` - a representation for a term within a given rule to which cut operator was applied (i.e. `t(X) :- f(X), !.`) 
-- Values:  
-  ```
-  data Val = AtomVal String |
-      IntVal Int |
-      FloatVal Float |
-      StringVal String |
-      BoolVal Bool
-      deriving (Show, Eq)
-  ```
-  
+### Syntax
 
+Below is the rules describing syntax for expression and values supported by the language:
+```
+<alpha-num-char> = [a-zA-Z0-9]
+<unary-operator> ::= '-' | 'not'
+
+<binary-operator> ::= '+' | '*' | '/' |                          # arith operators 
+                   '==' | '!=' | '<=' | '>=' | '<' | '>' |      # comparison operations
+                   'and' | 'or'                                 # logical operator
+
+<cons-list> ::= <expression-1> '|' <expression-1>
+
+<enumerated-list> ::= <expression-1> ',' <expression-1> | <expression-1>
+
+<list-elements> ::= <cons-list> | <enumerated-list> | '' 
+<list> ::= '[' <listExpElements> ']'
+
+<unary-operation> ::= <unary-operator> <expression-2>
+
+<binary-operation> ::= <expression-2> <binary-operator> <expression-2>
+
+<cut> ::= '!'
+
+<integer> ::= <digit>
+<digit> ::= [0-9]<digit> | ""
+
+<boolean> ::= 'True' | 'False'
+<atom> ::= <atom-first-char><atom-nonfirst-char>
+<atom-first-char> ::= [a-z]
+<atom-nonfirst-char> ::= [a-zA-Z0-9]<atom-non-first-char>
+
+<literal> ::= <boolean> | <integer> | <string> | <atom>
+
+<term> ::= <term-identifier> '(' <term-args> ')' 
+
+<term-identifier> ::= <identifier-first-char><identifier-nonfirst-char>
+<term-identifier-first-char> ::= [a-zA-Z_]
+<term-identifier-nonfirst-char> ::= <alpha-num-char><identifier-nonfirst-char> | '' 
+
+<term-args> ::= <expression-1> ',' <term-args> | <expression-1>
+
+<variable> ::= <identifier-first-char><identifier-nonfirst-char>
+<variable-first-char> ::= [A-Z_]
+<variable-nonfirst-char> ::= <alpha-num-char><variable-nonfirst-char> | '' 
+
+<expression-1> ::= <binary-operation> | <list> | <cut> | <unary-operation> | <term> | <literal> | <variable>
+# An expression which is nested in some other binary or unary expression
+<expression-2> ::= <list> | <cut> | '(' <unary-operation> ')' | <term> | '(' <binary-operation> ')' | <literal> | <variable>
+```
+
+Additionally, there are three extra rules which are describing statements. Statements are not expressions themselves but still they are being 
+used by the parser to load the source code of the program that will be used by the user to query against:
+```
+<program> ::= <rule-statement><program> | <consult-statement><program>
+
+<rule-statement> ::= <term-identifier> '(' <term-args> ')'<rule-statement-body>
+<rule-statement-body> ::= ':-' <expression> '.' | ''
+
+<consult-statement> ::= 'consult(' <single-quote> <consult-resource-path> <single-quote> ').'
+ 
+ <single-quote> ::= '\''
+```
+
+### Unification 
+
+In order to answer a user's query, the interpreter uses a unification procedure which for a given input is trying to: 
+- Evaluate all expressions reducing them to literals or references 
+- Decide whether the given input is satisfiable under the current environment scope (i.e. there is a solution that matches the defined criteria)
+- Substitute variables provided as part of the given input with matching values defined in the current environment
+
+
+
+
+### Known Issues / Scope for Improvement
+
+- There is no syntactic shape enforcement for const-lists:
+  - Valid: `[H|T]`
+  - Valid: `[X|[Y|T]]`
+  - Also valid, unfortunately: `[H|(term name)]`
+- There could be more control provided to the user when it comes to type conversion especially during arithmetic operations
+- It is impossible under the current implementation to have any persistent state between runs of `unify` / `solve`
+- If I had more time, I would try to merge definitions of `unify` and `eval` under a single `unify` construct

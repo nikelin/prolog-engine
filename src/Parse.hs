@@ -24,6 +24,7 @@ module Parse (program, expression, rule) where
   import Control.Monad (void, sequence)
 
   import Core
+  import Data.Maybe (fromMaybe)
 
   type MParser = Parsec Void Text
 
@@ -60,7 +61,7 @@ module Parse (program, expression, rule) where
          firstChar = M.char '_' <|> (case capitalize of
            True -> M.upperChar
            False -> M.letterChar)
-         nonFirstChar = M.alphaNumChar
+         nonFirstChar = M.alphaNumChar 
 
   unaryOperator :: MParser Operator
   unaryOperator = (M.chunk "-" *> (return OpMin)) <|>
@@ -118,7 +119,7 @@ module Parse (program, expression, rule) where
 
   literalExp :: MParser (Either String Expression)
   literalExp = do
-    v <- M.choice [(fmap Right boolean), (fmap Right integer), (fmap Right float), (fmap Right stringExp), (fmap Right atom)]
+    v <- M.choice [(fmap Right boolean), (fmap Right integer), (fmap Right stringExp), (fmap Right atom)]
     return (fmap (\vf -> LiteralExp vf) v)
 
   expression :: MParser (Either String Expression)
@@ -171,17 +172,10 @@ module Parse (program, expression, rule) where
   stringExp :: MParser Val
   stringExp = M.between (symbol "'") (symbol "'") (StringVal <$> (M.manyTill M.printChar (M.lookAhead "'")))
 
-  float :: MParser Val
-  float = do
-    m <- M.some M.digitChar
-    symbol "."
-    e <- M.some M.digitChar
-    return (FloatVal (read (m ++ "." ++ e) :: Float))
-
   integer :: MParser Val
   integer = do
     v <- M.some M.digitChar
-    return (IntVal (read v :: Int))
+    return (NumVal (read v:: Int))
 
   atom :: MParser Val
   atom = M.between (M.optional M.space) (M.optional M.space) parser

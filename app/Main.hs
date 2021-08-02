@@ -16,7 +16,6 @@ module Main where
   import qualified Text.Megaparsec.Char as M
   import qualified Text.Megaparsec.Char.Lexer as L
   import Data.Text (strip, unpack, Text, pack)
-  import Data.Set as S
   import Control.Monad
   import Debug.Trace
 
@@ -35,7 +34,7 @@ module Main where
                 do
                   putStrLn "- yes"
                   putStrLn (join $ (fmap (\solution ->
-                      "Solution: \n\r" ++ (join (S.toList (S.map (\subst -> (fst subst) ++ " = " ++ (show (snd subst)) ++ "\n\r") solution)))
+                      "Solution: \n\r" ++ (join (map (\subst -> (fst subst) ++ " = " ++ (show (snd subst)) ++ "\n\r") solution))
                     ) solutions))
               Left e -> putStrLn "- no"
           )
