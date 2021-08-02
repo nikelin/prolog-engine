@@ -61,7 +61,7 @@ module Parse (program, expression, rule) where
          firstChar = M.char '_' <|> (case capitalize of
            True -> M.upperChar
            False -> M.letterChar)
-         nonFirstChar = M.alphaNumChar 
+         nonFirstChar = M.alphaNumChar <|> M.char '_'
 
   unaryOperator :: MParser Operator
   unaryOperator = (M.chunk "-" *> (return OpMin)) <|>
@@ -76,7 +76,7 @@ module Parse (program, expression, rule) where
       (symbol "<" *> (return OpCompLt)) <|>
       (symbol ">=" *> (return OpCompLte)) <|>
       (symbol "<=" *> (return OpCompGte)) <|>
-      (symbol "=\\=" *> (return OpNotEq)) <|>
+      (symbol "!=" *> (return OpNotEq)) <|>
       (symbol "==" *> (return OpEq)) <|>
       (symbol "and" *> (return OpAnd)) <|>
       (symbol "or" *> (return OpOr))
@@ -235,6 +235,7 @@ module Parse (program, expression, rule) where
       return (fmap (\vb ->
         (foldl (\l -> \r -> (BinaryExpression OpAnd r l)) (LiteralExp (BoolVal True)) vb)) cutExpPredicates)
     (symbol ".")
+    (M.many (symbol "\n" <|> symbol "\r"))
     return (case argsv of
       Right argsvv ->
         (case body of

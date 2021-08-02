@@ -6,7 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
-
   import Parse
   import Core
   import Unify
@@ -15,7 +14,7 @@ module Main where
   import qualified Text.Megaparsec.Error
   import qualified Text.Megaparsec.Char as M
   import qualified Text.Megaparsec.Char.Lexer as L
-  import Data.Text (strip, unpack, Text, pack)
+  import Data.Text (strip, unpack, Text, pack, replace)
   import Control.Monad
   import Debug.Trace
   import Data.Maybe (fromMaybe)
@@ -43,12 +42,12 @@ module Main where
       ":open" ->
         (readLineRepl "Enter path to the file: ") >>= (\path ->
           (readFile path) >>= (\code ->
-            case (M.runParser (program path) "" (pack code)) of
+            (case (M.runParser (program path) "" (pack code)) of
               (Right (Right p2 @ (Program _ stms))) ->
                 (printLineRepl (Just p2) " Ok.") >> (repl (Just p2))
               (Left e) ->
                printLineRepl p (" Failure: " ++ show(e)) >> repl Nothing
-           )
+           ))
          )
       expr ->
         case p of

@@ -9,7 +9,6 @@ module Unify(solve, processInstructions, unify, eval) where
   import qualified Data.HashMap.Strict as H (HashMap, unions, insert, fromListWith, lookup, empty, fromList, toList, union, unionWith)
   import qualified Data.Set as S
   import qualified Data.List as LS
-  import qualified Data.Align as A
   import Core
   import Debug.Trace
   import System.IO

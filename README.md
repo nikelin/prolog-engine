@@ -144,7 +144,7 @@ siblings(X, S) :-
 
 REPL commands to execute the example scenario:
 ```
-repl> :open "ancestry_1.prolog"
+repl>> :open "ancestry_1.prolog"
 repl *ancestry_1.prolog> siblings(josh, Y)
 ? - True
 
@@ -161,6 +161,17 @@ repl *ancestry_1.prolog> siblings(X, S)
 ```
 
 ### Known Issues / Scope for Improvement
+- There seems to be an issue in the alpha-conversion algorithm for closures which is preventing correct unification in terms with dependent
+  variable pairs which are named differently to the term represented by closure. I.e.:
+  ```
+    siblings(X, S) :- 
+       parent(Y, X),
+       parent(Y, S),
+       S != X.
+    
+    ?- siblings(X, P)     # doesn't work correctly
+    ?- siblings(X, S)     # works correctly
+  ```
 - There is no syntactic shape enforcement for const-lists:
   - Valid: `[H|T]`
   - Valid: `[X|[Y|T]]`

@@ -201,7 +201,7 @@ main = hspec $ do
   describe "Parsing" $ do
     describe "instructions support" $ do
       it "a consult instruction" $ do
-        result <- processInstructions [ConsultStmt "test/resources/test01.prolog"]
+        result <- processInstructions [ConsultStmt "prolog/test01.prolog"]
         result `shouldBe` (Right [
             (RuleStmt "fact" [LiteralExp (AtomVal "a")] Nothing)
             , (RuleStmt "fact" [LiteralExp (AtomVal "b")] Nothing)
@@ -215,7 +215,7 @@ main = hspec $ do
         M.runParser (program "test") "" "factC(A)." `shouldBe` (Right (Right (Program "test" [(RuleStmt "factC" [VarExp "A"] Nothing)])))
 
       it "a consult instruction" $ do
-        M.runParser (program "test") "" "consult('resources/test01.prolog')." `shouldBe` (Right (Right (Program "test" [ConsultStmt "resources/test01.prolog"])))
+        M.runParser (program "test") "" "consult('prolog/test01.prolog')." `shouldBe` (Right (Right (Program "test" [ConsultStmt "prolog/test01.prolog"])))
 
       it "multiple facts (no body)" $ do
         let facts = (take 100 (repeat ("factC(1, a, d).", RuleStmt "factC" [(LiteralExp (NumVal 1)), (LiteralExp (AtomVal "a")), (LiteralExp (AtomVal "d"))] Nothing)))
