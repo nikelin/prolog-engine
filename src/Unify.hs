@@ -79,36 +79,36 @@ module Unify(solve, processInstructions, unify, eval) where
   -- which when applied to one side of the unification problem produce the desired outcome.
   unify'' :: Bool -> TermEnv -> Substs -> Expression -> Expression -> (Bool, [Substs])
   unify'' incut _ _ _ expr @ (ClosureExpr _ _ _) = (False, [])
-  
+
   unify'' incut env subst (ListExp _) (ListExp EmptyList) = (True, [])
-  unify'' incut env subst (ListExp EmptyList) (ListExp _) = (True, []) 
-  
+  unify'' incut env subst (ListExp EmptyList) (ListExp _) = (True, [])
+
   unify'' incut env subst l @ (ListExp (EnumeratedList (head:tail))) (ListExp (ConsList head2 tail2)) =
     case unify'' incut env subst head head2 of
-      (True, results) -> 
-        let 
+      (True, results) ->
+        let
           (tailFlag, tailResults) = (unify'' incut env subst (ListExp (EnumeratedList tail)) tail2)
         in
           (tailFlag, tailResults ++ results)
       dif -> dif
-  
+
   unify'' incut env subst l @ (ListExp (ConsList head tail)) (ListExp (EnumeratedList (head2:tail2))) =
     case unify'' incut env subst head head2 of
       (True, results) ->
-        let 
+        let
           (tailFlag, tailResults) = (unify'' incut env subst tail (ListExp (EnumeratedList tail2)))
         in
           (tailFlag, tailResults ++ results)
       dif -> dif
-  
+
   unify'' incut env subst l @ (ListExp (EnumeratedList xs)) (ListExp (EnumeratedList ys)) =
     foldl (\(lstate, lresults) ->
       (\(left, right) ->
         case (unify'' incut env subst left right) of
-          (False, _) -> (lstate, lresults) 
+          (False, _) -> (lstate, lresults)
           (True, results) -> (True, lresults ++ results)
       )) (False, []) (zip xs ys)
-    
+
   unify'' incut env subst l @ (ListExp _) (VarExp n2) = (True, [[(n2, l)]])
 
   unify'' incut env subst l @ (VarExp n1) (VarExp n2) = (True, [])
@@ -225,11 +225,11 @@ module Unify(solve, processInstructions, unify, eval) where
                   (False, _) ->
                     (if lu then lu else False, lsols))
               )) (True, []) (reverse (foldl (\l -> (\term ->
-                if (length l) > 0 && incut then trace ("Cut has been triggered") l
-                else ( (trace ("(" ++ (show incut) ++ ") Performing unification: " ++ (show term) ++ ", " ++ (show expr) ++ " >>> Current solutions list: " ++ (show l)) (unify'' incut env subst term expr)):l)
+                if (length l) > 0 && incut then l
+                else ( (unify'' incut env subst term expr):l)
               )) [] v)))
             in
-              trace ("@@@ FINAL solutions: " ++ (show solutions)) solutions
+              solutions
         Nothing ->
           trace ("Term was not found:" ++ (show termId')) (False, []))
 
@@ -307,7 +307,7 @@ module Unify(solve, processInstructions, unify, eval) where
                               else
                                 (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr)))
                         in
-                          trace ("Binary evaluation result of " ++ (show leftExpr) ++ " " ++ (show op) ++ " " ++ (show rightExpr) ++ ": " ++ (show evaluationResult)) (leftSolSubst ++ rightSolSubst, evaluationResult)
+                          (leftSolSubst ++ rightSolSubst, evaluationResult)
                       ) rightSolsList)
                   Left exception -> trace("Exception intercepted, swallowing - " ++ (show exception)) []
               )

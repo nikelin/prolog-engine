@@ -64,6 +64,33 @@ main = hspec $ do
               ]
         (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
 
+      it "(1 - simple case) ancestry example with three terms: parent, sibling, has_children" $ do
+        let termsEnv = H.fromListWith (++) [
+              ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "josh"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "michael"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "clarisa"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "sarah"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "jessicah"))]])
+              , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "michael")), (LiteralExp (AtomVal "brian"))]])
+              , ("has_children/1", [ClosureExpr "has_children" [VarExp "P"] (TermExp "parent" [VarExp "P", VarExp "C"])])
+              , ("siblings/2", [ClosureExpr "siblings" [VarExp "P", VarExp "S"] (BinaryExpression OpAnd
+                   (TermExp "parent" [VarExp "Y", VarExp "P"]) -- dim(Y) == 1
+                   (BinaryExpression OpAnd
+                      (TermExp "parent" [VarExp "Y", VarExp "S"]) -- dim(Y) == 1 but dim(S) == 5
+                      (BinaryExpression OpNotEq
+                        (VarExp "P")
+                        (VarExp "S"))
+                 ))])
+               ]
+        let expression = (TermExp "siblings" [(VarExp "P"), (VarExp "S")])
+        let expectedSolutions = [
+              [("S", (LiteralExp (AtomVal "josh")))]
+              , [("S", (LiteralExp (AtomVal "clarisa")))]
+              , [("S", (LiteralExp (AtomVal "sarah")))]
+              , [("S", (LiteralExp (AtomVal "jessicah")))]
+              ]
+        (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
+
       it "(2 - cut operator case) if expression ambiguous branches" $ do
         let termsEnv = H.fromListWith (++) [
               ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 5))]])

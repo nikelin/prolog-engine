@@ -123,15 +123,48 @@ In order to answer a user's query, the interpreter uses a unification procedure 
 - Decide whether the given input is satisfiable under the current environment scope (i.e. there is a solution that matches the defined criteria)
 - Substitute variables provided as part of the given input with matching values defined in the current environment
 
+### REPL
 
 
+### Working examples
+
+#### Example 1: Ancestry example - Siblings
+
+The code of the `ancestry_1.prolog`:
+```
+parent(michael, josh).
+parent(michael, stephen).
+parent(michael, jessicah).
+
+siblings(X, S) :- 
+  parent(Y, X),
+  parent(Y, S),
+  S != X.
+```
+
+REPL commands to execute the example scenario:
+```
+repl> :open "ancestry_1.prolog"
+repl *ancestry_1.prolog> siblings(josh, Y)
+? - True
+
+Y = stephen
+Y = jessicah
+
+repl *ancestry_1.prolog> siblings(josh, jessica)
+? - True
+
+repl *ancestry_1.prolog> siblings(X, S)
+? - True
+(X = josh, S=stephen)
+(X = josh, S=jessicah) 
+```
 
 ### Known Issues / Scope for Improvement
-
 - There is no syntactic shape enforcement for const-lists:
   - Valid: `[H|T]`
   - Valid: `[X|[Y|T]]`
   - Also valid, unfortunately: `[H|(term name)]`
-- There could be more control provided to the user when it comes to type conversion especially during arithmetic operations
-- It is impossible under the current implementation to have any persistent state between runs of `unify` / `solve`
-- If I had more time, I would try to merge definitions of `unify` and `eval` under a single `unify` construct
+- There could be more control provided to the user when it comes to type conversion especially during arithmetic operations.
+- It is impossible under the current implementation to have any persistent state between runs of `unify` / `solve`.
+- If I had more time, I would try to merge definitions of `unify` and `eval` under a single `unify` construct.

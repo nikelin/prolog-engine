@@ -164,7 +164,7 @@ module Core (Val(AtomVal, NumVal, StringVal, BoolVal),
     | op == OpNotEq = (LiteralExp (BoolVal (left /= right)))
     | op == OpCompLte = (LiteralExp (BoolVal (left <= right)))
     | op == OpCompGte = (LiteralExp (BoolVal (left >= right)))
-    | op == OpCompGt = (LiteralExp (BoolVal (trace ("Left " ++ (show left) ++ "; right=" ++ (show right)) (left > right))))
+    | op == OpCompGt = (LiteralExp (BoolVal (left > right)))
     | op == OpCompLt = (LiteralExp (BoolVal (left < right)))
 
   listVariables :: Expression -> S.Set String
