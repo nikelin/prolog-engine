@@ -68,7 +68,7 @@ main = hspec $ do
               ]
         (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
 
-      it "(3 - complex case, all pairs) ancestry example with three terms: parent, sibling, has_children" $ do
+      it "(2 - complex case, all pairs) ancestry example with three terms: parent, sibling, has_children" $ do
         let termsEnv = H.fromListWith (++) [
               ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "josh"))]])
               , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "michael"))]])
@@ -97,7 +97,7 @@ main = hspec $ do
           (unifieable, actualSolutions) ->  
             (unifieable, (length (intersect expectedSolutions actualSolutions)))  `shouldBe` (True, (length expectedSolutions)))
 
-      it "(2 - cut operator case) if expression ambiguous branches" $ do
+      it "(3 - cut operator case) ambiguous branches" $ do
         let termsEnv = H.fromListWith (++) [
               ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 5))]])
               , ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 15))]])
@@ -114,6 +114,26 @@ main = hspec $ do
               [("Y", (LiteralExp (NumVal 20)))]
               ]
         (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
+        
+      it "(4 - no cut operator) ambiguous branches" $ do
+          let termsEnv = H.fromListWith (++) [
+                ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 5))]])
+                , ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 15))]])
+                , ("xy/2", [TermExp "xy" [(LiteralExp (NumVal 5)), (LiteralExp (NumVal 20))]])
+                , ("find_y/2", [ClosureExpr "find_y" [VarExp "X", VarExp "Y"] (BinaryExpression OpAnd
+                        (TermExp "xy" [VarExp "X", VarExp "Y"])
+                        (BinaryExpression
+                          OpCompGt
+                          (VarExp "Y") (LiteralExp (NumVal 5))))
+                   ])
+                 ]
+          let expression = (TermExp "find_y" [LiteralExp (NumVal 5), VarExp "Y"])
+          let expectedSolutions = [
+                [("Y", (LiteralExp (NumVal 15)))]
+                , [("Y", (LiteralExp (NumVal 20)))]
+                ]
+          (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
+
 
   describe "Unification" $ do
     describe "term unifications" $ do
