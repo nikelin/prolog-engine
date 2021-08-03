@@ -133,7 +133,7 @@ module Unify(solve, processInstructions, unify, eval) where
         backSubstRefs = (LS.map (\s -> (fst s, (snd (snd s)))) backSubst)
         variables = listVariables term
       in
-        (case (unifyPair incut env subst term (TermExp cn closureArgsScoped)) of
+       (case (unifyPair incut env subst term (TermExp cn closureArgsScoped)) of
           (True, new_subst) ->
             let
               invokeClosure = (\(r, (lu, ls)) ->
@@ -199,7 +199,6 @@ module Unify(solve, processInstructions, unify, eval) where
   unify' incut env subst expr @ (TermExp name args) =
     let
       termId' = (termId name (length args))
-      variables = (listVariables expr)
     in
       (case (H.lookup termId' env) of
         Just v ->

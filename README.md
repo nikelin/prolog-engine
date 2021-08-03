@@ -120,13 +120,32 @@ used by the parser to load the source code of the program that will be used by t
 ### Unification 
 
 In order to answer a user's query, the interpreter uses a unification procedure which for a given input is trying to: 
-- Evaluate all expressions reducing them to literals or references 
-- Decide whether the given input is satisfiable under the current environment scope (i.e. there is a solution that matches the defined criteria)
-- Substitute variables provided as part of the given input with matching values defined in the current environment
+- **Evaluate** all expressions reducing them to literals or references 
+- **Determine** whether the given input is satisfiable under the current environment scope (i.e. there is a solution that matches the defined criteria)
+- **Substitute** variables provided as part of the given input with matching values defined in the current environment
 
 Unification starts with an expression and terms environment which contains resolved terms assigned to their normalised identifiers.
 
-If the input expression is a term, then the interpreter will try to find a matching entry among terms provided via the `termEnv`. If a matching term exists, the unification continues in two stages:
+If the input expression is a term, then the interpreter will try to find a matching entry among terms provided via the `termEnv`. If a matching term exists, 
+the unification continues in two stages: arguments and body unification.
+
+There are few aspects of the unification that I wanted to cover in this section. A unification run always produces two components: a boolean result 
+showing whether it is possible to unify the expression, and a also set of solutions produced as a result. 
+
+When a single unification results in a one or more multiple recursive calls, solutions from the current scope are being passed down
+together with a set of variables defined in the current scope's expression.
+
+So, let's say there are statements `factD(D, E)` and `fact(A, D)` as defined below: 
+```
+factD(D, E) :- factC(F), factB(F, D), factF(E, D).
+fact(A, D) :- factD(A, D). 
+```
+
+And if we have a unification query against the `fact(A, D)`, then at the point when evaluation gets down to its body expression, the variables scope will have `A` and `D` 
+in it, as the body of `fact(A, D)` has two variable expressions in it.
+
+As for solutions propagation, it happens from top to bottom and from left to right in binary expressions. 
+
 
 #### Terms unification: Arguments
 
@@ -147,13 +166,10 @@ its conjunction with `(LiteralExp (BoolVal True))`.
 
 A unification of the term's body considered successful if its evaluated expression is unifiable with `(LiteralExp (BoolVal True))`.
 
-#### 
-
 #### Other expressions
 
 In all other cases, it will perform evaluation of the input expression unifying the resulting value with `True`, unless it is an exception
 in which case returning the error value.
-
 
 
 ### REPL
@@ -176,35 +192,76 @@ expression and executed against the current program statements.
 
 #### Example 1: Ancestry example - Siblings
 
-The code of the `ancestry_1.prolog`:
+`prolog/ancestry_1.prolog`:
 ```
-parent(michael, josh).
-parent(michael, stephen).
-parent(michael, jessicah).
-
-siblings(X, S) :- 
-  parent(Y, X),
-  parent(Y, S),
-  S != X.
+parent(alex, josh).
+parent(alex, bill).
+parent(michael, kathy).
+parent(mitchell, larry).
+parent(bill, jonh).
+parent(bill, sarah).
+parent(bill, anthony).
+gender(alex, male).
+gender(josh, male).
+gender(bill, male).
+gender(anthony, male).
+gender(sarah, female).
+gender(john, male).
+gender(larry, male).
+gender(mitchell, male).
+female(X) :- gender(X, female).
+male(X) :- gender(X, male).
+siblings(X, Y) :- parent(S, X), parent(S, Y), X != Y.
+brother(X, Y) :- siblings(X, Y), male(Y).
+sister(X, Y) :- siblings(X, Y), sister(Y).
+has_sister(X) :- siblings(X, Y), female(Y).
 ```
 
 REPL commands to execute the example scenario:
 ```
-repl>> :open "ancestry_1.prolog"
-repl *ancestry_1.prolog> siblings(josh, Y)
-? - True
+repl >> :open
+Enter path to the file: 
+repl *prolog/ancestry01.prolog>>  Ok.
+repl *prolog/ancestry01.prolog> siblings(josh, Y)
+? - yes
 
-Y = stephen
-Y = jessicah
+Y=bill
 
-repl *ancestry_1.prolog> siblings(josh, jessica)
-? - True
+[Done]
+repl *prolog/ancestry01.prolog>> male(X).
+? - yes
 
-repl *ancestry_1.prolog> siblings(X, S)
-? - True
-(X = josh, S=stephen)
-(X = josh, S=jessicah) 
+X=alex
+X=josh
+X=bill
+X=anthony
+X=john
+X=larry
+X=mitchell
+
+[Done]
+repl *prolog/ancestry01.prolog>> siblings(X, Y)
+Variables scope: fromList ["X","Y"] for query siblings(${X},${Y},)
+? - yes
+
+X=josh  Y=bill
+X=bill  Y=josh
+X=jonh  Y=sarah
+X=jonh  Y=anthony
+X=sarah  Y=jonh
+X=sarah  Y=anthony
+X=anthony  Y=jonh
+X=anthony  Y=sarah
+
+[Done]
 ```
+
+### Tests
+
+Current tests suite conducts various checks and attempts at verifying correctness of almost all constructs present in 
+language.
+
+To run the tests, simply execute `stack test`.
 
 ### Known Issues / Scope for Improvement
 - There seems to be an issue in the alpha-conversion algorithm for closures which is preventing correct unification in terms with dependent
