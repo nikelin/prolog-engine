@@ -263,7 +263,7 @@ language.
 
 To run the tests, simply execute `stack test`.
 
-### Known Issues / Scope for Improvement
+### Known Issues / Scope for Improvement / Not implemented
 - There seems to be an issue in the alpha-conversion algorithm for closures which is preventing correct unification in terms with dependent
   variable pairs which are named differently to the term represented by closure. I.e.:
   ```
@@ -275,6 +275,7 @@ To run the tests, simply execute `stack test`.
     ?- siblings(X, P)     # doesn't work correctly
     ?- siblings(X, S)     # works correctly
   ```
+- No support for disjoint control structure (`;/2`)
 - There is no syntactic shape enforcement for const-lists:
   - Valid: `[H|T]`
   - Valid: `[X|[Y|T]]`
