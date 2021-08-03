@@ -82,7 +82,7 @@ module Core (Val(AtomVal, NumVal, StringVal, BoolVal),
     show (OpMult) = "*"
 
   instance Show Expression where
-    show (VarExp n) = n
+    show (VarExp n) = "${" ++ n ++ "}"
     show (TermExp n args) = (n ++ "(" ++ ((fmap (\v -> ((show v) ++ ",")) args) >>= id) ++ ")")
     show (ClosureExpr n args body) = (n ++ "(" ++ ((fmap show args) >>= id) ++ ") :- " ++ (show body))
     show CutOperatorExp = "!"
@@ -100,7 +100,7 @@ module Core (Val(AtomVal, NumVal, StringVal, BoolVal),
   instance Show Val where
     show (BoolVal v) = show v
     show (NumVal v) = show v
-    show (StringVal v) = v
+    show (StringVal v) = "'" ++ v ++ "'"
     show (AtomVal v) = v
 
   isCompOp :: Operator -> Bool

@@ -112,19 +112,7 @@ module Unify(solve, processInstructions, unify, eval) where
 
   unifyPair incut env subst l @ (VarExp n1) (VarExp n2) = (True, [])
   unifyPair incut env subst (VarExp n) l @ (LiteralExp n1) = (True, [])
-  unifyPair incut env subst exp @ (BinaryExpression _ _ _) term @ (TermExp n args) =
-    (case (eval incut S.empty subst env exp) of
-      Right solutions ->
-        (foldl (\(unifies, lred) ->
-          (\(rsubst, rexpr) ->
-            (case (unify env rsubst rexpr) of
-              (True, nsols) ->
-                (True, nsols ++ lred)
-              (False, _) -> (unifies, lred)
-          ))) (True, []) solutions)
-      Left e ->
-        trace ("Unable to unify bin-exp and term-exp: " ++ (show exp) ++ " termexp " ++ (show term) ++ ", reason: " ++ (show e)) (False, []))
-
+  
   unifyPair incut env subst t @ (TermExp _ _) (VarExp n) = (True, [[(n, t)]])
   unifyPair incut env subst v @ (LiteralExp _) (VarExp n) = (True, [[(n, v)]])
   unifyPair incut env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
@@ -304,7 +292,9 @@ module Unify(solve, processInstructions, unify, eval) where
                               else if (isBinaryArithOp op) then
                                 (binaryArithOp op leftExpr rightExpr)
                               else
-                                (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr)))
+                                (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr))
+                            (leftVal, rightVal) ->
+                              trace ("Unexpected pair of values: " ++ (show leftVal) ++ " " ++ (show rightVal)) (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr)))
                         in
                           (leftSolSubst ++ rightSolSubst, evaluationResult)
                       ) rightSolsList)
