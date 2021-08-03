@@ -13,7 +13,8 @@ module Core (Val(AtomVal, NumVal, StringVal, BoolVal),
             Expression(ExceptionExpression, VarExp, TermExp, LiteralExp, CutOperatorExp, CutExp, ClosureExpr, ListExp, UnaryExpression, BinaryExpression),
             Statement(RuleStmt, ConsultStmt),
             Program(Program),
-            unaryArithOp, unaryLogicalOp, isBinaryArithOp, binaryArithOp, isCompOp, compareOp, binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
+            unaryArithOp, isTruthy, unaryLogicalOp, isBinaryArithOp, binaryArithOp, isCompOp, compareOp, 
+            binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
 
   import Debug.Trace
   import qualified Data.Set as S

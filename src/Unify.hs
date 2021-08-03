@@ -112,7 +112,7 @@ module Unify(solve, processInstructions, unify, eval) where
 
   unifyPair incut env subst l @ (VarExp n1) (VarExp n2) = (True, [])
   unifyPair incut env subst (VarExp n) l @ (LiteralExp n1) = (True, [])
-  
+
   unifyPair incut env subst t @ (TermExp _ _) (VarExp n) = (True, [[(n, t)]])
   unifyPair incut env subst v @ (LiteralExp _) (VarExp n) = (True, [[(n, v)]])
   unifyPair incut env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
@@ -276,29 +276,40 @@ module Unify(solve, processInstructions, unify, eval) where
       case leftSolsEither of
         Right leftSolsList ->
           let
+            -- short-circuiting evaluation
+            eligibleSolutions =
+              (filter (\leftSol ->
+                  case (op, leftSol) of
+                    (OpAnd, (_, exp)) -> isTruthy exp
+                    _ -> True
+                ) leftSolsList)
             result = leftSolsList >>= (\leftSol ->
-               case (eval incut closureScope (subst ++ (fst leftSol)) termEnv right) of
-                  Right rightSolsList ->
-                    (fmap (\rightSol ->
-                        let
-                          (leftSolSubst, leftExpr) = leftSol
-                          (rightSolSubst, rightExpr) = rightSol
-                          evaluationResult = (case (leftExpr, rightExpr) of
-                            (LiteralExp leftVal, LiteralExp rightVal) ->
-                              if (isCompOp op) then
-                                (compareOp op leftExpr rightExpr)
-                              else if (isBinaryLogicalOp op) then
-                                (binaryLogicalOp op leftExpr rightExpr)
-                              else if (isBinaryArithOp op) then
-                                (binaryArithOp op leftExpr rightExpr)
-                              else
-                                (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr))
-                            (leftVal, rightVal) ->
-                              trace ("Unexpected pair of values: " ++ (show leftVal) ++ " " ++ (show rightVal)) (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr)))
-                        in
-                          (leftSolSubst ++ rightSolSubst, evaluationResult)
-                      ) rightSolsList)
-                  Left exception -> trace("Exception intercepted, swallowing - " ++ (show exception)) []
+              if (op == OpOr && isTruthy (snd leftSol)) then
+                -- Short circuiting the right branch
+                [leftSol]
+              else
+                  case (eval incut closureScope (subst ++ (fst leftSol)) termEnv right) of
+                    Right rightSolsList ->
+                      (fmap (\rightSol ->
+                          let
+                            (leftSolSubst, leftExpr) = leftSol
+                            (rightSolSubst, rightExpr) = rightSol
+                            evaluationResult = (case (leftExpr, rightExpr) of
+                              (LiteralExp leftVal, LiteralExp rightVal) ->
+                                if (isCompOp op) then
+                                  (compareOp op leftExpr rightExpr)
+                                else if (isBinaryLogicalOp op) then
+                                  (binaryLogicalOp op leftExpr rightExpr)
+                                else if (isBinaryArithOp op) then
+                                  (binaryArithOp op leftExpr rightExpr)
+                                else
+                                  (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr))
+                              (leftVal, rightVal) ->
+                                trace ("Unexpected pair of values: " ++ (show leftVal) ++ " " ++ (show rightVal)) (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr)))
+                          in
+                            (leftSolSubst ++ rightSolSubst, evaluationResult)
+                        ) rightSolsList)
+                    Left exception -> trace("Exception intercepted, swallowing - " ++ (show exception)) []
               )
           in
             Right result
