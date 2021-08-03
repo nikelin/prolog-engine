@@ -18,6 +18,8 @@ import qualified Text.Megaparsec.Char as M
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Text (strip, unpack, Text, pack)
 import qualified Data.Set as S
+import Data.List
+import Data.Function
 import qualified Data.HashMap.Strict as H
 import Control.Monad
 
@@ -33,6 +35,8 @@ ndetake n xs = go (length xs) n xs
     go spare n []     =  []
     go spare n (x:xs) =  map (x:) (go (spare-1) (n-1) xs)
                             ++     go (spare-1)  n   xs
+
+uniqPairs l = nub [(x,y) | x <-l, y<-l, x < y] ++ nub [(y,x) | x <-l, y<-l, x < y]
 
 main :: IO ()
 main = hspec $ do
@@ -64,7 +68,7 @@ main = hspec $ do
               ]
         (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
 
-      it "(1 - simple case) ancestry example with three terms: parent, sibling, has_children" $ do
+      it "(3 - complex case, all pairs) ancestry example with three terms: parent, sibling, has_children" $ do
         let termsEnv = H.fromListWith (++) [
               ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "josh"))]])
               , ("parent/2", [TermExp "parent" [(LiteralExp (AtomVal "stephen")), (LiteralExp (AtomVal "michael"))]])
@@ -83,13 +87,15 @@ main = hspec $ do
                  ))])
                ]
         let expression = (TermExp "siblings" [(VarExp "P"), (VarExp "S")])
-        let expectedSolutions = [
-              [("S", (LiteralExp (AtomVal "josh")))]
-              , [("S", (LiteralExp (AtomVal "clarisa")))]
-              , [("S", (LiteralExp (AtomVal "sarah")))]
-              , [("S", (LiteralExp (AtomVal "jessicah")))]
-              ]
-        (unify termsEnv [] expression) `shouldBe` (True, expectedSolutions)
+        let persons = ["josh", "michael", "clarisa", "sarah", "jessicah"]
+        let personPairs = (filter (\v -> (fst v) /= (snd v)) (uniqPairs persons))
+        let expectedSolutions = fmap (\(p1, p2) ->
+                [("P", (LiteralExp (AtomVal p1))), ("S", (LiteralExp (AtomVal p2)))]
+              ) personPairs
+        let actualResult = (unify termsEnv [] expression)
+        (case actualResult of
+          (unifieable, actualSolutions) ->  
+            (unifieable, (length (intersect expectedSolutions actualSolutions)))  `shouldBe` (True, (length expectedSolutions)))
 
       it "(2 - cut operator case) if expression ambiguous branches" $ do
         let termsEnv = H.fromListWith (++) [

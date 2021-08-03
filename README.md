@@ -39,16 +39,16 @@ The language allows following operations over its data types:
   - Logical conjunction: `(and) :: Truthy -> Truthy -> Bool`
   - Logical disjunction: `(or) :: Truthy -> Truthy -> Bool`
   - Comparison operations:
-    - `(>) :: Ord a -> a -> a -> Bool`
-    - `(<) :: Ord a -> a -> a -> Bool`
-    - `(>=) :: Ord a -> a -> a -> Bool`
-    - `(<=) :: Ord a -> a -> a -> Bool`
-    - `(==) :: Ord a -> a -> a -> Bool`
-    - `(!=) :: Ord a -> a -> a -> Bool`
+    - `(>) :: NumVal -> NumVal -> BoolVal`
+    - `(<) :: NumVal -> NumVal -> BoolVal`
+    - `(>=) :: NumVal -> NumVal -> BoolVal`
+    - `(<=) :: NumVal -> NumVal -> BoolVal`
+    - `(==) :: NumVal -> NumVal -> BoolVal`
+    - `(!=) :: NumVal -> NumVal -> BoolVal`
   - Arithmetic operations:
-    - Addition: `(+) :: Numeric a -> a -> a -> a`
-    - Multiplication: `(*) :: Numeric a -> a -> a -> a`
-    - Division: `(/) :: Numeric a -> a -> a -> a`
+    - Addition: `(+) :: NumVal -> NumVal -> NumVal`
+    - Multiplication: `(*) :: NumVal -> NumVal -> NumVal`
+    - Division: `(/) :: NumVal -> NumVal -> NumVal`
 
 ## Implementation
 
@@ -108,12 +108,13 @@ used by the parser to load the source code of the program that will be used by t
 ```
 <program> ::= <rule-statement><program> | <consult-statement><program>
 
-<rule-statement> ::= <term-identifier> '(' <term-args> ')'<rule-statement-body>
+<newline> ::= '\n'<newline> | '\r'<newline> | '\n\r'<newline> | ''
+<rule-statement> ::= <term-identifier> '(' <term-args> ')' <rule-statement-body> '.' <newline>
 <rule-statement-body> ::= ':-' <expression> '.' | ''
 
 <consult-statement> ::= 'consult(' <single-quote> <consult-resource-path> <single-quote> ').'
  
- <single-quote> ::= '\''
+<single-quote> ::= '\''
 ```
 
 ### Unification 
@@ -123,8 +124,53 @@ In order to answer a user's query, the interpreter uses a unification procedure 
 - Decide whether the given input is satisfiable under the current environment scope (i.e. there is a solution that matches the defined criteria)
 - Substitute variables provided as part of the given input with matching values defined in the current environment
 
+Unification starts with an expression and terms environment which contains resolved terms assigned to their normalised identifiers.
+
+If the input expression is a term, then the interpreter will try to find a matching entry among terms provided via the `termEnv`. If a matching term exists, the unification continues in two stages:
+
+#### Terms unification: Arguments
+
+Performs unification on each pair `(inputTermArg, resolvedTermArg)` proceeding to the next step if all pairs are unifiable also passing
+the resulting substitutions to the body unification stage (if rule).
+
+At this point, we can satisfy all queries that are made against facts.
+
+#### Terms unification: Body 
+
+Interpreter progresses to this stage only if the left side of the unification is a `ClosureExp` or a rule in Prolog terms.
+
+In some way, this procedure can be compared with the function application as the only purpose of the input term is to initialise 
+the resolved closure arguments and provide the output context for its unification results.
+
+A term body is always an expression, and the default behaviour of the bundled parser to treat it as a boolean term producing as a result
+its conjunction with `(LiteralExp (BoolVal True))`.
+
+A unification of the term's body considered successful if its evaluated expression is unifiable with `(LiteralExp (BoolVal True))`.
+
+#### 
+
+#### Other expressions
+
+In all other cases, it will perform evaluation of the input expression unifying the resulting value with `True`, unless it is an exception
+in which case returning the error value.
+
+
+
 ### REPL
 
+REPL provides a user with an interactive shell in which they can load a program's source code which is then can be queries 
+against.
+
+In order to use a REPL console, a user need to `stack ghci` and in GHCi REPL run `main` which will in its turn start a Prolog REPL 
+session.
+
+Two commands are available:
+- `:open` - prompts user to provide a path on the local filesystem to some Prolog file, which is when
+  processed successfully changes REPL's execution context to the resulting program context allowing for queries execution.
+- `:quit` - exits the current REPL session
+
+Any other input string will be ignored unless there is an active Prolog execution context, in which case the input will be considered as an
+expression and executed against the current program statements.
 
 ### Working examples
 

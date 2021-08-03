@@ -76,43 +76,43 @@ module Unify(solve, processInstructions, unify, eval) where
 
   -- Performs unification between two given expressions, returns a set of solutions where each contains a set of substitutions
   -- which when applied to one side of the unification problem produce the desired outcome.
-  unify'' :: Bool -> TermEnv -> Substs -> Expression -> Expression -> (Bool, [Substs])
-  unify'' incut _ _ _ expr @ (ClosureExpr _ _ _) = (False, [])
+  unifyPair :: Bool -> TermEnv -> Substs -> Expression -> Expression -> (Bool, [Substs])
+  unifyPair incut _ _ _ expr @ (ClosureExpr _ _ _) = (False, [])
 
-  unify'' incut env subst (ListExp _) (ListExp EmptyList) = (True, [])
-  unify'' incut env subst (ListExp EmptyList) (ListExp _) = (True, [])
+  unifyPair incut env subst (ListExp _) (ListExp EmptyList) = (True, [])
+  unifyPair incut env subst (ListExp EmptyList) (ListExp _) = (True, [])
 
-  unify'' incut env subst l @ (ListExp (EnumeratedList (head:tail))) (ListExp (ConsList head2 tail2)) =
-    case unify'' incut env subst head head2 of
+  unifyPair incut env subst l @ (ListExp (EnumeratedList (head:tail))) (ListExp (ConsList head2 tail2)) =
+    case unifyPair incut env subst head head2 of
       (True, results) ->
         let
-          (tailFlag, tailResults) = (unify'' incut env subst (ListExp (EnumeratedList tail)) tail2)
+          (tailFlag, tailResults) = (unifyPair incut env subst (ListExp (EnumeratedList tail)) tail2)
         in
           (tailFlag, tailResults ++ results)
       dif -> dif
 
-  unify'' incut env subst l @ (ListExp (ConsList head tail)) (ListExp (EnumeratedList (head2:tail2))) =
-    case unify'' incut env subst head head2 of
+  unifyPair incut env subst l @ (ListExp (ConsList head tail)) (ListExp (EnumeratedList (head2:tail2))) =
+    case unifyPair incut env subst head head2 of
       (True, results) ->
         let
-          (tailFlag, tailResults) = (unify'' incut env subst tail (ListExp (EnumeratedList tail2)))
+          (tailFlag, tailResults) = (unifyPair incut env subst tail (ListExp (EnumeratedList tail2)))
         in
           (tailFlag, tailResults ++ results)
       dif -> dif
 
-  unify'' incut env subst l @ (ListExp (EnumeratedList xs)) (ListExp (EnumeratedList ys)) =
+  unifyPair incut env subst l @ (ListExp (EnumeratedList xs)) (ListExp (EnumeratedList ys)) =
     foldl (\(lstate, lresults) ->
       (\(left, right) ->
-        case (unify'' incut env subst left right) of
+        case (unifyPair incut env subst left right) of
           (False, _) -> (lstate, lresults)
           (True, results) -> (True, lresults ++ results)
       )) (False, []) (zip xs ys)
 
-  unify'' incut env subst l @ (ListExp _) (VarExp n2) = (True, [[(n2, l)]])
+  unifyPair incut env subst l @ (ListExp _) (VarExp n2) = (True, [[(n2, l)]])
 
-  unify'' incut env subst l @ (VarExp n1) (VarExp n2) = (True, [])
-  unify'' incut env subst (VarExp n) l @ (LiteralExp n1) = (True, [])
-  unify'' incut env subst exp @ (BinaryExpression _ _ _) term @ (TermExp n args) =
+  unifyPair incut env subst l @ (VarExp n1) (VarExp n2) = (True, [])
+  unifyPair incut env subst (VarExp n) l @ (LiteralExp n1) = (True, [])
+  unifyPair incut env subst exp @ (BinaryExpression _ _ _) term @ (TermExp n args) =
     (case (eval incut S.empty subst env exp) of
       Right solutions ->
         (foldl (\(unifies, lred) ->
@@ -125,17 +125,17 @@ module Unify(solve, processInstructions, unify, eval) where
       Left e ->
         trace ("Unable to unify bin-exp and term-exp: " ++ (show exp) ++ " termexp " ++ (show term) ++ ", reason: " ++ (show e)) (False, []))
 
-  unify'' incut env subst t @ (TermExp _ _) (VarExp n) = (True, [[(n, t)]])
-  unify'' incut env subst v @ (LiteralExp _) (VarExp n) = (True, [[(n, v)]])
-  unify'' incut env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
-  unify'' incut env subst (ExceptionExpression _) _ = (False, [])
-  unify'' incut env subst _ (ExceptionExpression _) = (False, [])
+  unifyPair incut env subst t @ (TermExp _ _) (VarExp n) = (True, [[(n, t)]])
+  unifyPair incut env subst v @ (LiteralExp _) (VarExp n) = (True, [[(n, v)]])
+  unifyPair incut env subst (LiteralExp left) (LiteralExp right) = (left == right, [])
+  unifyPair incut env subst (ExceptionExpression _) _ = (False, [])
+  unifyPair incut env subst _ (ExceptionExpression _) = (False, [])
 
   -- This unification serves as a sort of 'invocation' for the closure term.
   --
   -- Closure arguments are going to be replaced by either values or placeholders from the input term, in the latter case
   -- we will also have to update closure's body as otherwise we are going to face incorrect naming issues.
-  unify'' incut env subst lambda @ (ClosureExpr cn closure_args body) term @ (TermExp tn args)
+  unifyPair incut env subst lambda @ (ClosureExpr cn closure_args body) term @ (TermExp tn args)
     | cn == tn =
       let
         symbolsTable = (genSym closure_args)
@@ -145,7 +145,7 @@ module Unify(solve, processInstructions, unify, eval) where
         backSubstRefs = (LS.map (\s -> (fst s, (snd (snd s)))) backSubst)
         variables = listVariables term
       in
-        (case (unify'' incut env subst term (TermExp cn closureArgsScoped)) of
+        (case (unifyPair incut env subst term (TermExp cn closureArgsScoped)) of
           (True, new_subst) ->
             let
               invokeClosure = (\(r, (lu, ls)) ->
@@ -157,7 +157,7 @@ module Unify(solve, processInstructions, unify, eval) where
                       (let
                         eligibleSolutions = (filter (\sol ->
                             -- making sure that the resulting value is 'truthy' (i.e. unifiable to True)
-                            (case (unify'' incut env subst (LiteralExp (BoolVal True)) (snd sol)) of
+                            (case (unifyPair incut env subst (LiteralExp (BoolVal True)) (snd sol)) of
                               (r, _) -> r)
                           ) evalResult)
                         solutions = (fmap (\v -> (fst v)) eligibleSolutions)
@@ -183,7 +183,7 @@ module Unify(solve, processInstructions, unify, eval) where
           (False, _) -> trace ("Unable to unify closure and term " ++ (show term)) (False, []))
     | otherwise = (False, [])
 
-  unify'' incut env subst term1 @ (TermExp tname1 args1) term2 @ (TermExp tname2 args2)
+  unifyPair incut env subst term1 @ (TermExp tname1 args1) term2 @ (TermExp tname2 args2)
     | tname1 /= tname2 = ((False, []))
     | (length args1) /= (length args2) = (False, [])
     | otherwise =
@@ -196,8 +196,8 @@ module Unify(solve, processInstructions, unify, eval) where
               (True, argSolutions)
           else
             (False, []))
-        ) (True, []) (fmap (\arg -> (unify'' incut env subst (fst arg) (snd arg))) (zip args1 args2)))
-  unify'' _ a b c d = trace ("Unexpected input" ++ (show a) ++ " " ++ (show b) ++ " " ++ (show c) ++ " " ++ (show d)) (False, [])
+        ) (True, []) (fmap (\arg -> (unifyPair incut env subst (fst arg) (snd arg))) (zip args1 args2)))
+  unifyPair _ a b c d = trace ("Unexpected input" ++ (show a) ++ " " ++ (show b) ++ " " ++ (show c) ++ " " ++ (show d)) (False, [])
 
   -- Performs unification for a given term against the global execution environment.
   -- Returns a set of solutions to the unification problem in form of [(A, 10), (B, 20)] where
@@ -225,7 +225,7 @@ module Unify(solve, processInstructions, unify, eval) where
                     (if lu then lu else False, lsols))
               )) (True, []) (reverse (foldl (\l -> (\term ->
                 if (length l) > 0 && incut then l
-                else ( (unify'' incut env subst term expr):l)
+                else ( (unifyPair incut env subst term expr):l)
               )) [] v)))
             in
               solutions
