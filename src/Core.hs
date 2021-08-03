@@ -9,11 +9,11 @@ module Core (Val(AtomVal, NumVal, StringVal, BoolVal),
             Identifier,
             Operator(OpAdd, OpMin, OpMult, OpDiv, OpAnd, OpOr, OpCompLt, OpCompLte, OpCompGt, OpCompGte, OpEq, OpNotEq, OpNot),
             List(ConsList, EnumeratedList, EmptyList),
-            Exception(UnknownVariableException, UnexpectedExpression, WrongBinaryOperationContext, WrongUnaryOperationContext),
+            Exception(UnificationFailed, UnknownVariableException, UnexpectedExpression, WrongBinaryOperationContext, WrongUnaryOperationContext),
             Expression(ExceptionExpression, VarExp, TermExp, LiteralExp, CutOperatorExp, CutExp, ClosureExpr, ListExp, UnaryExpression, BinaryExpression),
             Statement(RuleStmt, ConsultStmt),
             Program(Program),
-            unaryArithOp, isTruthy, unaryLogicalOp, isBinaryArithOp, binaryArithOp, isCompOp, compareOp, 
+            unaryArithOp, isTruthy, unaryLogicalOp, isBinaryArithOp, binaryArithOp, isCompOp, compareOp,
             binaryLogicalOp, isBinaryLogicalOp, listVariables, getOrElse) where
 
   import Debug.Trace
@@ -40,6 +40,7 @@ module Core (Val(AtomVal, NumVal, StringVal, BoolVal),
               | WrongUnaryOperationContext Operator Expression
               | WrongBinaryOperationContext Operator Expression Expression
               | UnsupportedListTypeException Operator Expression Expression
+              | UnificationFailed Expression
             deriving (Show, Eq)
 
   data Expression = VarExp String |

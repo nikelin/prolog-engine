@@ -77,7 +77,7 @@ module Unify(solve, processInstructions, unify, eval) where
   -- Performs unification between two given expressions, returns a set of solutions where each contains a set of substitutions
   -- which when applied to one side of the unification problem produce the desired outcome.
   unifyPair :: Bool -> TermEnv -> Substs -> Expression -> Expression -> (Bool, [Substs])
-  unifyPair incut _ _ _ expr @ (ClosureExpr _ _ _) = (False, [])
+  unifyPair incut _ _ left right @ (ClosureExpr _ _ _) = trace ("Unifying closure with something else: " ++ (show left) ++ ", " ++ show(right)) (False, [])
 
   unifyPair incut env subst (ListExp _) (ListExp EmptyList) = (True, [])
   unifyPair incut env subst (ListExp EmptyList) (ListExp _) = (True, [])
@@ -150,7 +150,7 @@ module Unify(solve, processInstructions, unify, eval) where
                           ) evalResult)
                         solutions = (fmap (\v -> (fst v)) eligibleSolutions)
                       in
-                        (True, (solutions ++ ls)))
+                        ((length solutions) > 0, (solutions ++ ls)))
                     Left e -> (lu, ls)))
               solutions = case new_subst of
                 [] -> invokeClosure([], (True, []))
@@ -210,9 +210,12 @@ module Unify(solve, processInstructions, unify, eval) where
                     (True, ((filter(\v -> (not ((length v) == 0))) rsubst) ++ lsols))
                   (False, _) ->
                     (if lu then lu else False, lsols))
-              )) (True, []) (reverse (foldl (\l -> (\term ->
+              )) (False, []) (reverse (foldl (\l -> (\term ->
                 if (length l) > 0 && incut then l
-                else ( (unifyPair incut env subst term expr):l)
+                else
+                  let
+                    unificationResult = (unifyPair incut env subst term expr)
+                  in (unificationResult:l)
               )) [] v)))
             in
               solutions
@@ -279,7 +282,9 @@ module Unify(solve, processInstructions, unify, eval) where
             eligibleSolutions =
               (filter (\leftSol ->
                   case (op, leftSol) of
-                    (OpAnd, (_, exp)) -> isTruthy exp
+                    (OpAnd, (_, exp)) ->
+                      if ((isTruthy exp)) then True
+                      else False
                     _ -> True
                 ) leftSolsList)
             result = leftSolsList >>= (\leftSol ->
@@ -287,10 +292,10 @@ module Unify(solve, processInstructions, unify, eval) where
                 -- Short circuiting the right branch
                 [leftSol]
               else
-                  case (eval incut closureScope (subst ++ (fst leftSol)) termEnv right) of
+                  (case (eval incut closureScope (subst ++ (fst leftSol)) termEnv right) of
                     Right rightSolsList ->
                       (fmap (\rightSol ->
-                          let
+                         (let
                             (leftSolSubst, leftExpr) = leftSol
                             (rightSolSubst, rightExpr) = rightSol
                             evaluationResult = (case (leftExpr, rightExpr) of
@@ -306,14 +311,15 @@ module Unify(solve, processInstructions, unify, eval) where
                               (leftVal, rightVal) ->
                                 trace ("Unexpected pair of values: " ++ (show leftVal) ++ " " ++ (show rightVal)) (ExceptionExpression (WrongBinaryOperationContext op leftExpr rightExpr)))
                           in
-                            (leftSolSubst ++ rightSolSubst, evaluationResult)
+                            (leftSolSubst ++ rightSolSubst, evaluationResult))
                         ) rightSolsList)
-                    Left exception -> trace("Exception intercepted, swallowing - " ++ (show exception)) []
+                    Left exception -> trace("Exception intercepted, swallowing - " ++ (show exception)) [])
               )
           in
             Right result
         Left e -> Left e
 
+  -- evaluate term in order to obtain a set of substitutions replacing it with the literal (BoolVal True) as a result
   eval incut parentScope subst termEnv exp @ (TermExp n args) =
     let
       closureScope = S.union (listVariables exp) parentScope
@@ -328,13 +334,18 @@ module Unify(solve, processInstructions, unify, eval) where
           newTerms = map (\av -> TermExp n av) (sequence argsEval)
           unifiedTerms = (filter (\unified -> (fst (snd unified))) (map (\term -> (term, unify' incut termEnv subst term)) newTerms))
           resultTerms = (unifiedTerms >>= (\sol ->
-            let
-              unifySubst = (snd (snd sol))
-            in
-              fmap (\v -> (v, (LiteralExp (BoolVal True)))) unifySubst
-            ))
+            case (snd (snd sol)) of
+              [] -> [([], (LiteralExp (BoolVal True)))]
+              _ ->
+                let
+                  unifySubst = (snd (snd sol))
+                in
+                  fmap (\v -> (v, (LiteralExp (BoolVal True)))) unifySubst
+                ))
         in resultTerms) evaluatedArgs
-    in merged
+    in (case merged of
+      Right [] -> Left (UnificationFailed exp)
+      other -> other)
 
   eval _ _ _ _ unexpected =
     trace ("Unexpected input to the eval(x, y): " ++ (show unexpected)) (Left (UnexpectedExpression unexpected))
