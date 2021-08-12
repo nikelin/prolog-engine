@@ -2,7 +2,6 @@ Prolog Engine (CS421 - Summer '21)
 -----
 - Author: Cyril Karpenko <kyrylok2@illinois.edu>
 - Date: Aug/01/2020
-- Source code repository: https://gitlab.com/cyrilkarpenko/prolog-engine
 
 ### Project structure
 
